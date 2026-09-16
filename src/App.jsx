@@ -36,6 +36,7 @@ import { computeOverallStatus, GPS_BY_REGION } from "./lib/scanLogic.js";
 import { downloadReport } from "./lib/pdf/caseReport.js";
 import { downloadReportDocx } from "./lib/docx/caseReport.js";
 import { useDismissOnBack } from "./lib/useDismissOnBack.js";
+import { apiUrl } from "./lib/apiBase.js";
 import {
   firebaseReady,
   firebaseSignOut,
@@ -1350,7 +1351,7 @@ function AppInner() {
   // seeded changelog on load, so /api/analyze can resolve "v2.4" etc. from
   // the very first scan, not just versions published during this session.
   useEffect(() => {
-    fetch("/api/rules", {
+    fetch(apiUrl("/api/rules"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ versions: ruleVersions.map((v) => ({ version: v.version, ruleText: v.ruleText })) }),
@@ -1370,7 +1371,7 @@ function AppInner() {
   function handlePublishRule(newVersion) {
     setRuleVersions((prev) => [newVersion, ...prev]);
     upsertRuleVersion(newVersion).catch((err) => setSyncError(err?.message || "Failed to sync rule."));
-    fetch("/api/rules", {
+    fetch(apiUrl("/api/rules"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ versions: [{ version: newVersion.version, ruleText: newVersion.ruleText }] }),

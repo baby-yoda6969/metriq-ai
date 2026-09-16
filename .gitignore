@@ -3,3 +3,11 @@ node_modules
 dist
 .DS_Store
 .playwright-mcp
+android/local.properties
+android/.gradle
+android/app/build
+android/build
+android/captures
+*.apk
+*.aab
+release/

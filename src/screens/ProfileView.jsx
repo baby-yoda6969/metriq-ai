@@ -8,11 +8,13 @@ import {
   LogOut,
   Moon,
   ScrollText,
+  Server,
   Settings2,
   Sparkles,
   Users,
 } from "lucide-react";
 import { useTheme } from "../lib/ThemeContext.jsx";
+import { getApiBase, isNativeApp } from "../lib/apiBase.js";
 import { getActiveRuleVersion } from "../lib/scanLogic.js";
 import { cn } from "../lib/utils.js";
 
@@ -93,10 +95,31 @@ export function ProfileView({
 }) {
   const { mode, setMode } = useTheme();
   const [pauseNotifs, setPauseNotifs] = useState(false);
+  const [apiBase, setApiBase] = useState(() => {
+    try {
+      return localStorage.getItem("metriq.apiBase") || getApiBase() || "";
+    } catch {
+      return "";
+    }
+  });
+  const [apiSaved, setApiSaved] = useState(false);
   const active = getActiveRuleVersion(ruleVersions);
   const roleLabel = role === "inspector" ? "Inspector" : role === "supervisor" ? "Supervisor" : "Rule Admin";
   const initial = (session?.name || "?").trim().charAt(0).toUpperCase();
   const handle = session?.employeeId ? `@${String(session.employeeId).toLowerCase()}` : "@field";
+  const native = isNativeApp();
+
+  function saveApiBase() {
+    const next = apiBase.trim().replace(/\/$/, "");
+    try {
+      if (next) localStorage.setItem("metriq.apiBase", next);
+      else localStorage.removeItem("metriq.apiBase");
+    } catch {
+      /* ignore */
+    }
+    setApiSaved(true);
+    window.setTimeout(() => setApiSaved(false), 1600);
+  }
 
   return (
     <div className="px-5 pb-10 pt-4">
@@ -137,8 +160,33 @@ export function ProfileView({
             icon={Settings2}
             label="General settings"
             hint="Field defaults & capture"
-            last
+            last={!native}
           />
+          {native && (
+            <div className="px-4 pb-4 pt-1">
+              <div className="mb-2 flex items-center gap-2 text-[13px] font-medium text-ink">
+                <Server size={14} className="text-ink-soft" />
+                Analysis server
+              </div>
+              <input
+                value={apiBase}
+                onChange={(e) => setApiBase(e.target.value)}
+                placeholder="http://192.168.1.10:8787"
+                className="w-full rounded-xl border border-border bg-bg px-3 py-2.5 text-[13px] text-ink outline-none focus:border-brass"
+                aria-label="API server URL"
+              />
+              <button
+                type="button"
+                onClick={saveApiBase}
+                className="mt-2 w-full rounded-xl bg-panel-alt py-2 text-[13px] font-semibold text-ink"
+              >
+                {apiSaved ? "Saved" : "Save server URL"}
+              </button>
+              <p className="mt-1.5 text-[11px] leading-snug text-ink-soft">
+                Phone APK needs your laptop/server IP running `npm start` on the same Wi‑Fi.
+              </p>
+            </div>
+          )}
         </SettingsGroup>
 
         <SettingsGroup>

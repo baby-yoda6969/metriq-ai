@@ -10,6 +10,7 @@ import { InlineBanner } from "../components/ui/InlineBanner.jsx";
 import { formatDate } from "../lib/format.js";
 import { getActiveRuleVersion } from "../lib/scanLogic.js";
 import { analyzeLabelImage, extractRegulaSyncClauses } from "../lib/api.js";
+import { apiUrl } from "../lib/apiBase.js";
 import { downloadRuleVersionPdf } from "../lib/pdf/ruleVersionReport.js";
 import {
   CATEGORY_TONE, addClauseLine, diffRuleText, groupByCategory, parseRuleCatalog, removeClauseAt, updateClauseText,
@@ -353,7 +354,7 @@ export function RuleAdminView({ ruleVersions, onPublish, adminName = "Rule Admin
     const previewVersion = pending ? pending.version : nextVersionLabel();
     const previewRuleText = pending ? pending.ruleText : ruleText;
     try {
-      await fetch("/api/rules", {
+      await fetch(apiUrl("/api/rules"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ versions: [{ version: previewVersion, ruleText: previewRuleText }] }),

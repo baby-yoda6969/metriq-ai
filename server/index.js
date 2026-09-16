@@ -22,7 +22,10 @@ const pdfParse = require("pdf-parse");
 const app = express();
 const PORT = process.env.BACKEND_PORT || 8787;
 
-app.use(cors());
+app.use(cors({
+  origin: true,
+  credentials: false,
+}));
 app.use(express.json({ limit: "15mb" }));
 
 // Deterministic field-status logic still lives in ./rules.js, kept in the

@@ -1,14 +1,34 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.jsx'
-import { ThemeProvider } from './lib/ThemeContext.jsx'
-import { HandoffPhoneScreen } from './screens/scan/handoff.jsx'
-import { DEMO_3D_PRODUCTS } from './data/demoProducts.js'
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { Capacitor } from "@capacitor/core";
+import "./index.css";
+import App from "./App.jsx";
+import { ThemeProvider } from "./lib/ThemeContext.jsx";
+import { HandoffPhoneScreen } from "./screens/scan/handoff.jsx";
+import { DEMO_3D_PRODUCTS } from "./data/demoProducts.js";
 
-const handoffCode = new URLSearchParams(window.location.search).get('handoff')
+async function bootNativeChrome() {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    const { StatusBar, Style } = await import("@capacitor/status-bar");
+    await StatusBar.setStyle({ style: Style.Dark });
+    await StatusBar.setBackgroundColor({ color: "#000000" });
+  } catch {
+    /* plugin optional at runtime */
+  }
+  try {
+    const { SplashScreen } = await import("@capacitor/splash-screen");
+    await SplashScreen.hide();
+  } catch {
+    /* ignore */
+  }
+}
 
-createRoot(document.getElementById('root')).render(
+bootNativeChrome();
+
+const handoffCode = new URLSearchParams(window.location.search).get("handoff");
+
+createRoot(document.getElementById("root")).render(
   <StrictMode>
     <ThemeProvider>
       {handoffCode
@@ -16,4 +36,4 @@ createRoot(document.getElementById('root')).render(
         : <App />}
     </ThemeProvider>
   </StrictMode>,
-)
+);
