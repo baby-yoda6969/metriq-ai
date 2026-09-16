@@ -1,34 +1,9 @@
-// Design tokens: the single source of truth for the app's color/type/motion
-// values. Consumed by:
-//   - src/index.css's `@theme` block (Tailwind utilities for new components)
-//   - App.jsx's injected `GlobalStyle` (the CSS custom properties every
-//     legacy `.lm-*` class still references)
-// The jsPDF builders (`PDF_COLORS` in App.jsx) still hold their own RGB
-// arrays for now. Unifying those is scheduled for the ScanView/CaseDetail
-// phase of the revamp, not this one. Until then, keep hex values here and
-// in `PDF_COLORS` in sync by hand.
-export const COLORS = {
-  bg: "#F7F6F2",
-  panel: "#FFFFFF",
-  panelAlt: "#EFEDE6",
-  ink: "#181B22",
-  inkSoft: "#5B5F68",
-  navy: "#1F2E4A",
-  navyDeep: "#131C2E",
-  brass: "#AD7F33",
-  brassSoft: "#E9DAB8",
-  brassStrong: "#C79341", // brass CTA hover, was hardcoded inline before
-  green: "#2C7A55",
-  greenSoft: "#E3F0E9",
-  red: "#B23A34",
-  redSoft: "#F6E4E2",
-  border: "#DEDACD",
-  paper: "#F1EEE4", // off-white used on dark navy bands (hero text, watermark strokes)
-};
+// Brand follows the official metriq ai lockup: black / white with soft ice-blue
+// accents. Printed PDF reports keep the Legal Metrology navy/brass palette.
 
 export const FONTS = {
-  display: "'Spectral', Georgia, serif",
-  body: "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+  display: "'Manrope', 'Segoe UI', sans-serif",
+  body: "'Manrope', 'Segoe UI', sans-serif",
   mono: "'IBM Plex Mono', 'SF Mono', monospace",
 };
 
@@ -37,21 +12,81 @@ export const EASE = {
   back: "cubic-bezier(0.34, 1.56, 0.64, 1)",
 };
 
+const AUTH = {
+  authSalmon: "#708098",
+  authSalmonDeep: "#5A6A80",
+  authAccent: "#708098",
+  authInk: "#101820",
+  authMuted: "#8A94A0",
+  authLine: "#D0D5DC",
+  authBg: "#FFFFFF",
+  authHeader: "#000000",
+};
+
+export const THEMES = {
+  dark: {
+    mode: "dark",
+    bg: "#000000",
+    panel: "#12151A",
+    panelAlt: "#181C22",
+    ink: "#F7F8FA",
+    inkSoft: "#8B93A0",
+    navy: "#D0E0F8",
+    navyDeep: "#000000",
+    brass: "#D0E0F8",
+    brassSoft: "#151A24",
+    brassStrong: "#E8F0FC",
+    green: "#8FCB9B",
+    greenSoft: "#1A2A1C",
+    red: "#D98980",
+    redSoft: "#2C1816",
+    border: "#242A33",
+    paper: "#F7F8FA",
+    stage: "#000000",
+    hairline: "rgba(247, 248, 250, 0.08)",
+    ...AUTH,
+  },
+  light: {
+    mode: "light",
+    bg: "#F3F5F8",
+    panel: "#FFFFFF",
+    panelAlt: "#EBEEF3",
+    ink: "#101820",
+    inkSoft: "#6B7585",
+    navy: "#48648C",
+    navyDeep: "#101820",
+    brass: "#48648C",
+    brassSoft: "#E4EAF2",
+    brassStrong: "#708098",
+    green: "#2F7A4A",
+    greenSoft: "#E3F2E8",
+    red: "#B23A34",
+    redSoft: "#F6E4E2",
+    border: "#D7DCE4",
+    paper: "#101820",
+    stage: "#E8ECF2",
+    hairline: "rgba(16, 24, 32, 0.08)",
+    ...AUTH,
+  },
+};
+
+/** @deprecated Prefer useTheme().colors — kept for modules that still import COLORS. */
+export const COLORS = THEMES.dark;
+
 function hexToRgb(hex) {
   const n = parseInt(hex.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-// jsPDF wants plain [r, g, b] arrays, not CSS strings. Generated from
-// COLORS above instead of hand-duplicated, so the PDF report and the app's
-// on-screen colors can't drift apart from each other.
 export const PDF_COLORS = {
-  navy: hexToRgb(COLORS.navy),
-  navyDeep: hexToRgb(COLORS.navyDeep),
-  brass: hexToRgb(COLORS.brass),
-  ink: hexToRgb(COLORS.ink),
-  inkSoft: hexToRgb(COLORS.inkSoft),
-  green: hexToRgb(COLORS.green),
-  red: hexToRgb(COLORS.red),
-  border: hexToRgb(COLORS.border),
+  navy: hexToRgb("#1F2E4A"),
+  navyDeep: hexToRgb("#131C2E"),
+  brass: hexToRgb("#AD7F33"),
+  ink: hexToRgb("#181B22"),
+  inkSoft: hexToRgb("#5B5F68"),
+  green: hexToRgb("#2C7A55"),
+  red: hexToRgb("#B23A34"),
+  border: hexToRgb("#DEDACD"),
 };
+
+export const THEME_STORAGE_KEY = "metriq-theme";

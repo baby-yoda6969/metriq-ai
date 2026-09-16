@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle, Ban, Camera, Check, CheckCircle2, Eraser, Flag, Loader2,
@@ -10,7 +10,7 @@ import { Chip } from "../../components/ui/Chip.jsx";
 import { InlineBanner } from "../../components/ui/InlineBanner.jsx";
 import { FieldRow, Stamp } from "./parts.jsx";
 import { captureEvidencePhoto } from "../../lib/capture.js";
-import { verifyCorrection } from "../../lib/api.js";
+import { generate3DModel, verifyCorrection } from "../../lib/api.js";
 import { findDemo3DProduct } from "../../data/demoProducts.js";
 import { useDismissOnBack } from "../../lib/useDismissOnBack.js";
 
@@ -159,7 +159,7 @@ export function ConfirmViolationModal({ open, fields, onConfirm, onDispute, onCl
         </div>
       ) : (
         <div className="mt-4 rounded border border-border bg-panel-alt p-4">
-          <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-navy-deep">
+          <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-ink">
             <AlertTriangle size={14} className="text-brass" /> Override reason
           </div>
           <input
@@ -248,7 +248,7 @@ export function HoldNoticeModal({ open, scanMeta, onIssue, onClose }) {
       {!issued ? (
         <>
           <div className="rounded border border-border bg-panel-alt p-4 font-mono text-[12.5px] leading-relaxed text-ink">
-            <div className="mb-1.5 font-display text-[15px] font-semibold tracking-wide text-navy-deep">HOLD NOTICE</div>
+            <div className="mb-1.5 font-display text-[15px] font-semibold tracking-wide text-ink">HOLD NOTICE</div>
             <div>Brand: {scanMeta.brand}</div>
             <div>Category: {scanMeta.category}</div>
             <div>Region: {scanMeta.region}</div>
@@ -290,46 +290,94 @@ export function HoldNoticeModal({ open, scanMeta, onIssue, onClose }) {
 
 const THREE_D_STEPS = ["Front", "Back", "Side"];
 
-// A 3-step "capture front / back / side" wizard. These are real photos but
-// don't feed anything: once all three exist, the case's brand is looked up
-// against 4 pre-loaded demo products and that product's model is shown.
-// This is a fixed lookup, not a generator; the copy says so plainly rather
-// than letting it read as more than it is.
+// Front / back / side captures are sent to the backend (Gemini auth key)
+// to match a verified photogrammetry .glb from the catalog.
 export function ThreeDCaptureModal({ open, brand, onClose }) {
   const [stepIndex, setStepIndex] = useState(0);
+  const [captures, setCaptures] = useState([]);
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState("");
+  const [resolved, setResolved] = useState(null);
   const [modelViewerReady, setModelViewerReady] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [capturing, setCapturing] = useState(false);
   const fileInputRef = useRef(null);
-  const demoProduct = useMemo(() => findDemo3DProduct(brand), [brand]);
   const done = stepIndex >= THREE_D_STEPS.length;
+  const demoProduct = resolved;
 
-  // The small in-modal viewer is too cramped to make out label detail on
-  // the model — this lets a click blow it up into a near-fullscreen
-  // overlay with the same rotate/zoom controls, rather than trying to
-  // inspect detail in a 320px box. Closing it (X, backdrop click, or the
-  // back button — see useDismissOnBack) drops back to the small view
-  // instead of closing the whole capture modal.
+  useEffect(() => {
+    if (!open) {
+      setStepIndex(0);
+      setCaptures([]);
+      setGenerating(false);
+      setGenError("");
+      setResolved(null);
+      setModelViewerReady(false);
+      setExpanded(false);
+    }
+  }, [open]);
+
   useDismissOnBack(expanded, () => setExpanded(false));
 
-  // @google/model-viewer (three.js-sized) is loaded on demand, only once
-  // this demo-only modal actually needs to render a <model-viewer> element,
-  // so every other page load never pays for it.
   useEffect(() => {
-    if (!done || !demoProduct) return;
+    if (!done || generating || resolved || genError) return undefined;
+    let cancelled = false;
+    (async () => {
+      setGenerating(true);
+      try {
+        const data = await generate3DModel({
+          views: captures,
+          brandHint: brand,
+        });
+        if (cancelled) return;
+        setResolved({
+          name: data.name,
+          glb: data.glb,
+          declaredFields: data.declaredFields || [],
+          match: data.match,
+          confidence: data.confidence,
+          warning: data.warning,
+        });
+      } catch (err) {
+        if (cancelled) return;
+        const fallback = findDemo3DProduct(brand);
+        if (fallback) {
+          setResolved({ ...fallback, warning: err.message });
+        } else {
+          setGenError(err.message || "Could not build 3D reference.");
+        }
+      } finally {
+        if (!cancelled) setGenerating(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [done, captures, brand, generating, resolved, genError]);
+
+  useEffect(() => {
+    if (!demoProduct?.glb) return;
     let cancelled = false;
     import("@google/model-viewer").then(() => {
       if (!cancelled) setModelViewerReady(true);
     });
     return () => { cancelled = true; };
-  }, [done, demoProduct]);
+  }, [demoProduct?.glb]);
 
-  // These photos don't feed anything (see comment above): no need to
-  // decode/resize/hash them like a real evidence capture, just confirm a
-  // file was actually picked and advance the step.
-  function handleCapture(e) {
+  async function handleCapture(e) {
     const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    setStepIndex((i) => i + 1);
+    if (!file || capturing) return;
+    setCapturing(true);
+    try {
+      const { dataUrl } = await captureEvidencePhoto(file);
+      const label = THREE_D_STEPS[stepIndex];
+      setCaptures((prev) => [
+        ...prev,
+        { label, base64: dataUrl.split(",")[1], mediaType: "image/jpeg" },
+      ]);
+      setStepIndex((i) => i + 1);
+    } finally {
+      setCapturing(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   }
 
   return (
@@ -340,16 +388,26 @@ export function ThreeDCaptureModal({ open, brand, onClose }) {
             Capture the {THREE_D_STEPS[stepIndex].toLowerCase()} of the product ({stepIndex + 1} of {THREE_D_STEPS.length}).
           </p>
           <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleCapture} />
-          <Button variant="primary" onClick={() => fileInputRef.current.click()}>
-            <Camera size={15} /> Capture {THREE_D_STEPS[stepIndex].toLowerCase()}
+          <Button variant="primary" disabled={capturing} onClick={() => fileInputRef.current?.click()}>
+            <Camera size={15} /> {capturing ? "Saving…" : `Capture ${THREE_D_STEPS[stepIndex].toLowerCase()}`}
           </Button>
         </>
+      ) : generating ? (
+        <div className="flex flex-col items-center gap-3 py-10 text-[13px] text-ink-soft">
+          <Loader2 className="animate-spin text-brass" size={22} />
+          Matching captures to verified 3D reference…
+        </div>
       ) : demoProduct ? (
         <>
           <p className="mb-3 text-[13.5px] leading-relaxed text-ink-soft">
-            Matched to <strong>{demoProduct.name}</strong> — a verified 3D reference model of the physical product,
+            Matched to <strong>{demoProduct.name}</strong> — verified photogrammetry reference,
             cross-checked against the declarations below.
           </p>
+          {demoProduct.warning && (
+            <InlineBanner tone="info" className="mb-3">
+              {demoProduct.warning}
+            </InlineBanner>
+          )}
           {modelViewerReady ? (
             <button
               type="button"
@@ -381,7 +439,7 @@ export function ThreeDCaptureModal({ open, brand, onClose }) {
         </>
       ) : (
         <InlineBanner tone="error">
-          No verified 3D reference model is available yet for “{brand || "this brand"}”.
+          {genError || `No verified 3D reference model is available yet for “${brand || "this brand"}”.`}
         </InlineBanner>
       )}
 

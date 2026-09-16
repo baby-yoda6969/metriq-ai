@@ -1,5 +1,5 @@
-// Calls to our local backend proxy (server/index.js), which talks to the
-// Gemini API server-side. The frontend never calls Google directly.
+// Calls to our local backend proxy (server/index.js). Text/vision analysis
+// uses Groq; 3D pack matching uses Gemini auth (AQ.* key) server-side.
 
 // Only sends the rule VERSION ID, never the rule text itself: the server
 // looks the text up in its own store (see server/index.js's ruleStore) so
@@ -37,7 +37,7 @@ export async function analyzeLabelImage({ base64, mediaType }, activeRuleVersion
 }
 
 // One frame captured mid-rotation during the "scan a 3D object" flow (see
-// ObjectScanCapture): asks Gemini which of the named candidate products (if
+// ObjectScanCapture): asks Groq vision which of the named candidate products (if
 // any) the photo shows. This is a real per-frame vision call, not a
 // hardcoded guess — the caller still owns deciding what to do with an
 // uncertain/no match. Never throws: a failure just comes back as no match,
@@ -56,7 +56,7 @@ export async function identifyObject({ base64, mediaType, candidates }) {
   }
 }
 
-// Asks Gemini a narrow question, does this evidence photo plausibly support
+// Asks Groq vision a narrow question: does this evidence photo plausibly support
 // the claimed corrected value, before a correction is saved. The inspector
 // still has final authority: an implausible result doesn't block saving, it
 // attaches to the correction record so a supervisor reviewing the case
@@ -86,6 +86,28 @@ export async function extractRegulaSyncClauses({ base64, filename }) {
 
   if (!response.ok) {
     throw new Error((data && data.error) || ("RegulaSync request failed (HTTP " + response.status + ")."));
+  }
+
+  return data;
+}
+
+/** Front/back/side captures → Gemini 3D match → verified .glb + declarations. */
+export async function generate3DModel({ views, brandHint }) {
+  const response = await fetch("/api/generate-3d", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ views, brandHint }),
+  });
+
+  let data;
+  try {
+    data = await response.json();
+  } catch (e) {
+    throw new Error("3D service returned an unreadable response (HTTP " + response.status + ").");
+  }
+
+  if (!response.ok) {
+    throw new Error((data && data.error) || ("3D request failed (HTTP " + response.status + ")."));
   }
 
   return data;

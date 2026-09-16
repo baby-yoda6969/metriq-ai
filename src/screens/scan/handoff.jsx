@@ -30,7 +30,7 @@ export function PhoneHandoffCapture({ products, onMatched }) {
     try {
       const newCode = await createHandoffSession();
       const url = buildHandoffJoinUrl(newCode);
-      const qr = await QRCode.toDataURL(url, { margin: 1, width: 240, color: { dark: "#1F2A44", light: "#FFFFFF" } });
+      const qr = await QRCode.toDataURL(url, { margin: 1, width: 240, color: { dark: "#F5F5F8", light: "#14141C" } });
       setCode(newCode);
       setJoinUrl(url);
       setQrDataUrl(qr);
@@ -67,7 +67,7 @@ export function PhoneHandoffCapture({ products, onMatched }) {
   }
 
   return (
-    <div className="rounded-md border border-border bg-panel-alt p-5">
+    <div className="rounded-[22px] border border-white/8 bg-panel-alt p-5">
       {stage === "idle" && (
         <div className="flex flex-col items-center gap-3 py-4 text-center">
           <Smartphone size={28} className="text-navy/50" />
@@ -89,7 +89,7 @@ export function PhoneHandoffCapture({ products, onMatched }) {
         <div className="flex flex-col items-center gap-3 py-2 text-center">
           {qrDataUrl && <img src={qrDataUrl} alt={`QR code to join handoff session ${code}`} className="rounded border border-border" width={200} height={200} />}
           <div className="text-[11.5px] uppercase tracking-wide text-ink-soft">Session code</div>
-          <div className="font-mono text-[22px] font-bold tracking-[0.2em] text-navy-deep">{code}</div>
+          <div className="font-mono text-[22px] font-bold tracking-[0.2em] text-ink">{code}</div>
           <div className="max-w-[300px] break-all text-[11px] text-ink-soft/80">{joinUrl}</div>
 
           {stage === "waiting" && (
@@ -149,10 +149,10 @@ export function HandoffPhoneScreen({ code, products }) {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-[480px] flex-col gap-5 bg-panel px-5 py-8">
+    <div className="mx-auto flex min-h-screen max-w-[480px] flex-col gap-5 bg-bg px-5 py-8">
       <div>
         <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-soft">Legal Metrology · Phone handoff</div>
-        <h1 className="mt-1 text-[20px] font-bold text-navy-deep">Scan the product</h1>
+        <h1 className="mt-1 text-[20px] font-bold text-ink">Scan the product</h1>
       </div>
 
       {valid === null && (
@@ -178,7 +178,7 @@ export function HandoffPhoneScreen({ code, products }) {
       )}
 
       {valid === true && sendState === "sent" && (
-        <div className="flex flex-col items-center gap-3 rounded-md border border-border bg-panel-alt py-10 text-center">
+        <div className="flex flex-col items-center gap-3 rounded-[22px] border border-white/8 bg-panel-alt py-10 text-center">
           <CheckCircle2 size={32} className="text-green" />
           <div className="text-[15px] font-semibold text-ink">Sent to the laptop</div>
           <p className="max-w-[320px] text-[13px] text-ink-soft">

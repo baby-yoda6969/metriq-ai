@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isValidUser(data) {
+      return data.keys().hasAll(['name','employeeId','role','updatedAt'])
+        && data.name is string && data.name.size() > 0 && data.name.size() < 120
+        && data.employeeId is string && data.employeeId.size() > 0 && data.employeeId.size() < 64
+        && data.role in ['inspector','supervisor','ruleadmin'];
+    }
+    function isValidScan(data) {
+      return data.keys().hasAll(['id','brand','status','date','updatedAt'])
+        && data.id is string
+        && data.brand is string
+        && data.status in ['compliant','non_compliant','retake_needed']
+        && data.date is string;
+    }
+    function isValidRule(data) {
+      return data.keys().hasAll(['version','date','status','ruleText','updatedAt'])
+        && data.version is string
+        && data.ruleText is string
+        && data.status is string;
+    }
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && request.auth.uid == uid && isValidUser(request.resource.data);
+      allow delete: if false;
+    }
+    match /scans/{scanId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidScan(request.resource.data);
+      allow delete: if isSignedIn();
+    }
+    match /ruleVersions/{versionId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidRule(request.resource.data);
+      allow delete: if false;
+    }
+  }
+}

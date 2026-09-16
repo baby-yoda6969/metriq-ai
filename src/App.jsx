@@ -1,10 +1,9 @@
-import { useState, useMemo, useEffect, useRef, Component } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, Component } from "react";
 import {
-  ShieldCheck, Search, FileText,
+  Search, FileText,
   X, ChevronRight, AlertTriangle,
-  LayoutDashboard, Sparkles, Download, Users,
-  History as HistoryIcon, ScanLine, CheckCircle2, Loader2,
-  Ban, ScrollText,
+  LayoutDashboard, Download,
+  Ban, ScrollText, CheckCircle2, Loader2,
   Flag, Gavel, PenLine, UserCheck,
   Link2, GaugeCircle,
   PlayCircle, ShoppingCart, Radar, Box
@@ -14,9 +13,15 @@ import {
 } from "recharts";
 import { jsPDF } from "jspdf";
 import { COLORS, FONTS, PDF_COLORS } from "./lib/theme.js";
-import { Landing } from "./screens/Landing.jsx";
-import { RolePicker } from "./screens/RolePicker.jsx";
+import { useTheme } from "./lib/ThemeContext.jsx";
+import { AppFrame, BottomNav } from "./components/AppShell.jsx";
 import { Login } from "./screens/Login.jsx";
+import { PullToScan } from "./components/PullToScan.jsx";
+import { SplashScreen } from "./components/SplashScreen.jsx";
+import { HomeView } from "./screens/HomeView.jsx";
+import { CasesView } from "./screens/CasesView.jsx";
+import { ProfileView } from "./screens/ProfileView.jsx";
+import { RulesFeedView } from "./screens/RulesFeedView.jsx";
 import { RuleAdminView } from "./screens/RuleAdminView.jsx";
 import { ScanView } from "./screens/ScanView.jsx";
 import { ThreeDCaptureModal } from "./screens/scan/modals.jsx";
@@ -31,6 +36,19 @@ import { computeOverallStatus, GPS_BY_REGION } from "./lib/scanLogic.js";
 import { downloadReport } from "./lib/pdf/caseReport.js";
 import { downloadReportDocx } from "./lib/docx/caseReport.js";
 import { useDismissOnBack } from "./lib/useDismissOnBack.js";
+import {
+  firebaseReady,
+  firebaseSignOut,
+  loadUserProfile,
+  seedCloudIfEmpty,
+  signInWithSession,
+  subscribeRuleVersions,
+  subscribeScans,
+  upsertRuleVersion,
+  upsertScan,
+  upsertScans,
+  watchAuth,
+} from "./lib/firebaseSync.js";
 
 /* ---------------------------------------------------------------- */
 /* shared hooks                                                       */
@@ -1229,31 +1247,103 @@ function CaseDetail({ scan, onClose, role, onEscalate, onAssign, onSetPenalty })
 /* ---------------------------------------------------------------- */
 
 function AppInner() {
-  const [stage, setStage] = useState("landing"); // "landing" | "role"
   const [role, setRole] = useState(null);
-  // Chosen on the role-picker screen but not yet authenticated: gates entry
-  // into a role's console behind the (simulated) Login screen below, rather
-  // than dropping straight in — `role` itself is only set once sign-in
-  // completes, so every downstream screen can assume a real signed-in name
-  // is available whenever `role` is non-null.
-  const [pendingRole, setPendingRole] = useState(null);
-  const [pendingView, setPendingView] = useState("scan");
+  // `role` is set only after sign-in, so every downstream screen can assume
+  // a real signed-in session whenever `role` is non-null.
   const [session, setSession] = useState(null); // { name, employeeId, role } once signed in
-  const [view, setView] = useState("scan");
-  const [scans, setScans] = useState(seedScans);
+  const [authReady, setAuthReady] = useState(!firebaseReady);
+  const [syncError, setSyncError] = useState("");
+  const [view, setView] = useState("home");
+  const [homeCapture, setHomeCapture] = useState(null);
+  const [scanPullOpen, setScanPullOpen] = useState(false);
+  const [scans, setScans] = useState(() => seedScans());
   const [detailScanId, setDetailScanId] = useState(null);
-  const [rulesOpen, setRulesOpen] = useState(false);
   const [ruleVersions, setRuleVersions] = useState(RULE_CHANGELOG);
   const detailScan = scans.find((s) => s.id === detailScanId) || null;
+  const cloudSeeded = useRef(false);
 
-  // Screen-level back/forward: entering the role picker and picking a role
-  // are real forward navigations, so the back button should step out of
-  // them one at a time instead of leaving the app. Deeper layers (case
-  // detail, rule updates, escalate/assign/penalty, 3D capture, ...) each
-  // register themselves the same way via useDismissOnBack.
-  useDismissOnBack(stage === "role", () => setStage("landing"));
-  useDismissOnBack(!!pendingRole && !role, () => setPendingRole(null));
-  useDismissOnBack(!!role, () => { setRole(null); setSession(null); });
+  async function clearSession() {
+    setRole(null);
+    setSession(null);
+    setView("home");
+    setSyncError("");
+    try {
+      await firebaseSignOut();
+    } catch {
+      /* local session already cleared */
+    }
+  }
+
+  useDismissOnBack(!!role, () => { clearSession(); });
+  useDismissOnBack(scanPullOpen, () => setScanPullOpen(false));
+  useDismissOnBack(view === "feed", () => setView("home"));
+
+  // Restore Firebase Auth session after splash / refresh.
+  useEffect(() => {
+    if (!firebaseReady) {
+      setAuthReady(true);
+      return undefined;
+    }
+    return watchAuth(async (user) => {
+      try {
+        if (!user) {
+          setSession(null);
+          setRole(null);
+          return;
+        }
+        const profile = await loadUserProfile(user.uid);
+        if (profile?.role) {
+          setSession(profile);
+          setRole(profile.role);
+          setView("home");
+        }
+      } finally {
+        setAuthReady(true);
+      }
+    });
+  }, []);
+
+  // Live Firestore sync for cases + rulebook once signed in.
+  useEffect(() => {
+    if (!firebaseReady || !session?.uid) return undefined;
+    let alive = true;
+
+    (async () => {
+      if (!cloudSeeded.current) {
+        try {
+          const result = await seedCloudIfEmpty({
+            scans: seedScans(),
+            rules: RULE_CHANGELOG,
+          });
+          cloudSeeded.current = true;
+          if (result.seeded) setSyncError("");
+        } catch (err) {
+          if (alive) setSyncError(err?.message || "Could not seed Firestore.");
+        }
+      }
+    })();
+
+    const unsubScans = subscribeScans(
+      (rows) => {
+        if (!alive || !rows) return;
+        if (rows.length) setScans(rows);
+      },
+      (err) => alive && setSyncError(err?.message || "Scan sync failed.")
+    );
+    const unsubRules = subscribeRuleVersions(
+      (rows) => {
+        if (!alive || !rows) return;
+        if (rows.length) setRuleVersions(rows);
+      },
+      (err) => alive && setSyncError(err?.message || "Rule sync failed.")
+    );
+
+    return () => {
+      alive = false;
+      unsubScans();
+      unsubRules();
+    };
+  }, [session?.uid]);
 
   // Feature 2a security fix: the server is the source of truth for rule
   // text (see server/index.js's ruleStore) — this hydrates it with the
@@ -1263,20 +1353,23 @@ function AppInner() {
     fetch("/api/rules", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ versions: RULE_CHANGELOG.map((v) => ({ version: v.version, ruleText: v.ruleText })) }),
+      body: JSON.stringify({ versions: ruleVersions.map((v) => ({ version: v.version, ruleText: v.ruleText })) }),
     }).catch(() => { /* best-effort — analysis falls back to the base prompt if this didn't land */ });
-  }, []);
+  }, [ruleVersions]);
 
   function handleSaveScan(scan) {
     setScans((prev) => [scan, ...prev]);
+    upsertScan(scan).catch((err) => setSyncError(err?.message || "Failed to sync scan."));
   }
 
   function handleRunMonitor(newCases) {
     setScans((prev) => [...newCases, ...prev]);
+    upsertScans(newCases).catch((err) => setSyncError(err?.message || "Failed to sync monitor cases."));
   }
 
   function handlePublishRule(newVersion) {
     setRuleVersions((prev) => [newVersion, ...prev]);
+    upsertRuleVersion(newVersion).catch((err) => setSyncError(err?.message || "Failed to sync rule."));
     fetch("/api/rules", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1285,7 +1378,14 @@ function AppInner() {
   }
 
   function updateScan(id, patch) {
-    setScans((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+    setScans((prev) => {
+      const next = prev.map((s) => (s.id === id ? { ...s, ...patch } : s));
+      const updated = next.find((s) => s.id === id);
+      if (updated) {
+        upsertScan(updated).catch((err) => setSyncError(err?.message || "Failed to sync case update."));
+      }
+      return next;
+    });
   }
 
   function handleEscalate(id, reason) {
@@ -1300,80 +1400,121 @@ function AppInner() {
     updateScan(id, { penaltyBand: band });
   }
 
+  function handleTabChange(id) {
+    if (id === "scan") {
+      // Pull-to-scan lives on Home only — jump home first, then open the sheet.
+      setView("home");
+      setScanPullOpen(true);
+      return;
+    }
+    setScanPullOpen(false);
+    setView(id);
+  }
+
   return (
-    <div className="lm-root">
+    <AppFrame>
+    <div className="lm-root flex h-full min-h-0 flex-col overflow-hidden">
       <GlobalStyle />
 
-      {stage === "landing" ? (
-        <Landing onEnter={() => setStage("role")} />
-      ) : !role && !pendingRole ? (
-        <RolePicker onSelect={(nextRole, nextView) => { setPendingRole(nextRole); setPendingView(nextView); }} />
-      ) : !role && pendingRole ? (
-        <Login
-          role={pendingRole}
-          onBack={() => setPendingRole(null)}
-          onLogin={(sess) => {
-            setSession(sess);
-            setRole(pendingRole);
-            setView(pendingView);
-            setPendingRole(null);
-          }}
-        />
-      ) : (
-        <div className="lm-shell">
-          <header className="lm-header">
-            <div className="lm-header-left">
-              <ShieldCheck size={20} color="var(--brass)" />
-              <div>
-                <div className="lm-header-eyebrow">Legal Metrology · Field Compliance</div>
-                <div className="lm-header-title">{role === "inspector" ? "Inspector console" : role === "supervisor" ? "Supervisor dashboard" : "Rule Admin console"}</div>
-              </div>
-            </div>
-            <div className="lm-header-right">
-              {session && (
-                <div className="lm-session-chip">
-                  <div className="lm-session-avatar">{(session.name || "?").trim().charAt(0).toUpperCase()}</div>
-                  <div className="lm-session-text">
-                    <div className="lm-session-name">{session.name}</div>
-                    <div className="lm-session-id">{session.employeeId}</div>
-                  </div>
-                </div>
-              )}
-              {role === "inspector" && (
-                <button className="lm-btn" onClick={() => setRulesOpen(true)}><Sparkles size={14} /> Rule updates</button>
-              )}
-              <button className="lm-link-btn" onClick={() => { setRole(null); setSession(null); }}><Users size={14} /> Switch role</button>
-            </div>
-          </header>
-
-          <nav className="lm-nav">
-            {role === "inspector" && (
-              <>
-                <button className={"lm-nav-item" + (view === "scan" ? " lm-nav-active" : "")} onClick={() => setView("scan")}><ScanLine size={15} /> New scan</button>
-                <button className={"lm-nav-item" + (view === "history" ? " lm-nav-active" : "")} onClick={() => setView("history")}><HistoryIcon size={15} /> History</button>
-              </>
-            )}
-            {role === "supervisor" && (
-              <>
-                <button className={"lm-nav-item" + (view === "dashboard" ? " lm-nav-active" : "")} onClick={() => setView("dashboard")}><LayoutDashboard size={15} /> Dashboard</button>
-                <button className={"lm-nav-item" + (view === "history" ? " lm-nav-active" : "")} onClick={() => setView("history")}><HistoryIcon size={15} /> Case history</button>
-              </>
-            )}
-            {role === "ruleadmin" && (
-              <button className={"lm-nav-item" + (view === "ruleadmin" ? " lm-nav-active" : "")} onClick={() => setView("ruleadmin")}><ScrollText size={15} /> Rule editor</button>
-            )}
-          </nav>
-
-          <main className="lm-main">
-            {view === "scan" && role === "inspector" && <ScanView onSave={handleSaveScan} onUpdateScan={updateScan} ruleVersions={ruleVersions} inspectorName={session?.name || "Inspector on duty"} />}
-            {view === "history" && <HistoryView scans={scans} onSelect={(s) => setDetailScanId(s.id)} />}
-            {view === "dashboard" && role === "supervisor" && <DashboardView scans={scans} onSelect={(s) => setDetailScanId(s.id)} onRunMonitor={handleRunMonitor} supervisorName={session?.name || "Supervisor on duty"} />}
-            {view === "ruleadmin" && role === "ruleadmin" && <RuleAdminView ruleVersions={ruleVersions} onPublish={handlePublishRule} adminName={session?.name || "Rule Admin"} scans={scans} />}
-          </main>
+      {!authReady ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center text-[13px] text-ink-soft">
+          Connecting…
         </div>
+      ) : !role ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <Login
+            onLogin={async (sess, password) => {
+              if (firebaseReady) {
+                const profile = await signInWithSession(sess, password);
+                setSession(profile);
+                setRole(profile.role);
+              } else {
+                setSession(sess);
+                setRole(sess.role);
+              }
+              setView("home");
+              setSyncError("");
+            }}
+          />
+        </div>
+      ) : (
+        <PullToScan
+          enabled={view === "home"}
+          open={scanPullOpen}
+          onOpenChange={setScanPullOpen}
+          onCapture={(img) => {
+            setHomeCapture(img);
+            setScanPullOpen(false);
+            setView("scan");
+          }}
+        >
+          <main className={"app-main" + (view === "feed" ? " app-main--feed" : "")}>
+            {syncError && (
+              <div className="mx-5 mt-2 rounded-xl border border-[#F5C2C0] bg-[#FEF3F2] px-3 py-2 text-[12px] text-[#B42318]">
+                Sync: {syncError}
+              </div>
+            )}
+            {view === "home" && (
+              <HomeView
+                role={role}
+                session={session}
+                scans={scans}
+                ruleVersions={ruleVersions}
+                onOpenCases={() => setView("history")}
+                onOpenFeed={() => setView("feed")}
+                onOpenRules={() => setView("feed")}
+                onSelectScan={(s) => setDetailScanId(s.id)}
+                onOpenTrends={() => setView("dashboard")}
+                onOpenRuleEditor={() => setView("ruleadmin")}
+              />
+            )}
+            {view === "feed" && (
+              <RulesFeedView
+                ruleVersions={ruleVersions}
+                onBack={() => setView("home")}
+              />
+            )}
+            {view === "scan" && (
+              <ScanView
+                onSave={handleSaveScan}
+                onUpdateScan={updateScan}
+                ruleVersions={ruleVersions}
+                inspectorName={session?.name || "Inspector on duty"}
+                initialImage={homeCapture}
+                onConsumedInitialImage={() => setHomeCapture(null)}
+                onRescan={() => {
+                  setHomeCapture(null);
+                  setView("home");
+                  setScanPullOpen(true);
+                }}
+              />
+            )}
+            {view === "history" && <CasesView scans={scans} onSelect={(s) => setDetailScanId(s.id)} />}
+            {view === "dashboard" && role === "supervisor" && (
+              <div className="px-4 pt-4">
+                <DashboardView scans={scans} onSelect={(s) => setDetailScanId(s.id)} onRunMonitor={handleRunMonitor} supervisorName={session?.name || "Supervisor on duty"} />
+              </div>
+            )}
+            {view === "ruleadmin" && role === "ruleadmin" && (
+              <div className="px-4 pt-4">
+                <RuleAdminView ruleVersions={ruleVersions} onPublish={handlePublishRule} adminName={session?.name || "Rule Admin"} scans={scans} />
+              </div>
+            )}
+            {view === "profile" && (
+              <ProfileView
+                role={role}
+                session={session}
+                ruleVersions={ruleVersions}
+                onSwitchRole={() => { clearSession(); }}
+                onOpenRules={() => setView("feed")}
+                onBack={() => setView("home")}
+              />
+            )}
+          </main>
+          <BottomNav role={role} view={scanPullOpen ? "scan" : view} onChange={handleTabChange} />
+        </PullToScan>
       )}
 
-      {rulesOpen && <RulesModal onClose={() => setRulesOpen(false)} ruleVersions={ruleVersions} />}
       {detailScan && (
         <CaseDetail
           scan={detailScan}
@@ -1385,6 +1526,7 @@ function AppInner() {
         />
       )}
     </div>
+    </AppFrame>
   );
 }
 
@@ -1420,9 +1562,35 @@ class ErrorBoundary extends Component {
 }
 
 export default function App() {
+  const [booting, setBooting] = useState(() => {
+    try {
+      const force = new URLSearchParams(window.location.search).has("splash");
+      if (force) {
+        localStorage.removeItem("metriq.splash.seen");
+        return true;
+      }
+      return localStorage.getItem("metriq.splash.seen") !== "1";
+    } catch {
+      return true;
+    }
+  });
+
+  const endSplash = useCallback(() => {
+    try {
+      localStorage.setItem("metriq.splash.seen", "1");
+    } catch {
+      /* private mode / blocked storage */
+    }
+    setBooting(false);
+  }, []);
+
   return (
     <ErrorBoundary>
-      <AppInner />
+      {booting ? (
+        <SplashScreen onDone={endSplash} />
+      ) : (
+        <AppInner />
+      )}
     </ErrorBoundary>
   );
 }
@@ -1432,27 +1600,28 @@ export default function App() {
 /* ---------------------------------------------------------------- */
 
 function GlobalStyle() {
+  const { colors: C } = useTheme();
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Spectral:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+      /* Fonts load from index.html (Manrope + IBM Plex Mono). */
 
       .lm-root {
-        --bg: ${COLORS.bg};
-        --panel: ${COLORS.panel};
-        --panel-alt: ${COLORS.panelAlt};
-        --ink: ${COLORS.ink};
-        --ink-soft: ${COLORS.inkSoft};
-        --navy: ${COLORS.navy};
-        --navy-deep: ${COLORS.navyDeep};
-        --brass: ${COLORS.brass};
-        --brass-soft: ${COLORS.brassSoft};
-        --brass-strong: ${COLORS.brassStrong};
-        --green: ${COLORS.green};
-        --green-soft: ${COLORS.greenSoft};
-        --red: ${COLORS.red};
-        --red-soft: ${COLORS.redSoft};
-        --border: ${COLORS.border};
-        --paper: ${COLORS.paper};
+        --bg: ${C.bg};
+        --panel: ${C.panel};
+        --panel-alt: ${C.panelAlt};
+        --ink: ${C.ink};
+        --ink-soft: ${C.inkSoft};
+        --navy: ${C.navy};
+        --navy-deep: ${C.navyDeep};
+        --brass: ${C.brass};
+        --brass-soft: ${C.brassSoft};
+        --brass-strong: ${C.brassStrong};
+        --green: ${C.green};
+        --green-soft: ${C.greenSoft};
+        --red: ${C.red};
+        --red-soft: ${C.redSoft};
+        --border: ${C.border};
+        --paper: ${C.paper};
         --font-display: ${FONTS.display};
         --font-body: ${FONTS.body};
         --font-mono: ${FONTS.mono};
@@ -1487,47 +1656,47 @@ function GlobalStyle() {
 
       .lm-role-screen { padding: 56px 40px; text-align: center; max-width: 640px; margin: 0 auto; }
       .lm-role-eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass); margin-bottom: 10px; }
-      .lm-role-title { font-family: var(--font-display); font-weight: 600; font-size: 30px; color: var(--navy-deep); margin: 0 0 10px; }
+      .lm-role-title { font-family: var(--font-display); font-weight: 700; font-size: 30px; color: var(--ink); margin: 0 0 10px; }
       .lm-role-sub { color: var(--ink-soft); font-size: 14px; margin: 0 0 24px; }
-      .lm-tick { width: 100%; height: 12px; display: block; margin: 4px 0 28px; }
+      .lm-tick { width: 100%; height: 12px; display: flex; align-items: center; margin: 4px 0 28px; }
 
       .lm-shell { display: flex; flex-direction: column; min-height: 560px; }
-      .lm-header { background: var(--navy-deep); color: #F1EEE4; display: flex; align-items: center; justify-content: space-between; padding: 14px 22px; border-bottom: 3px solid var(--brass); }
+      .lm-header { background: rgba(10,10,18,0.92); color: var(--ink); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 22px; border-bottom: 1px solid rgba(255,255,255,0.06); backdrop-filter: blur(16px); }
       .lm-header-left { display: flex; align-items: center; gap: 10px; }
-      .lm-header-eyebrow { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--brass-soft); }
-      .lm-header-title { font-family: var(--font-display); font-size: 16px; font-weight: 600; }
-      .lm-header-right { display: flex; align-items: center; gap: 10px; }
+      .lm-header-eyebrow { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft); }
+      .lm-header-title { font-family: var(--font-display); font-size: 16px; font-weight: 700; }
+      .lm-header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
-      .lm-link-btn { background: none; border: none; color: #D9D5C8; font-size: 12.5px; display: flex; align-items: center; gap: 6px; }
-      .lm-link-btn:hover { color: #fff; }
+      .lm-link-btn { background: none; border: none; color: var(--ink-soft); font-size: 12.5px; display: flex; align-items: center; gap: 6px; }
+      .lm-link-btn:hover { color: var(--ink); }
 
-      .lm-session-chip { display: flex; align-items: center; gap: 8px; padding: 4px 10px 4px 4px; border: 1px solid rgba(241,238,228,0.16); border-radius: 999px; background: rgba(241,238,228,0.06); }
-      .lm-session-avatar { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--brass); color: var(--navy-deep); font-family: var(--font-display); font-weight: 700; font-size: 12px; flex-shrink: 0; }
+      .lm-session-chip { display: flex; align-items: center; gap: 8px; padding: 4px 10px 4px 4px; border: 1px solid rgba(255,255,255,0.1); border-radius: 999px; background: rgba(255,255,255,0.04); }
+      .lm-session-avatar { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--navy); color: #fff; font-family: var(--font-display); font-weight: 700; font-size: 12px; flex-shrink: 0; }
       .lm-session-text { display: flex; flex-direction: column; line-height: 1.25; }
-      .lm-session-name { font-size: 12px; font-weight: 600; color: #F1EEE4; }
-      .lm-session-id { font-family: var(--font-mono); font-size: 10px; color: var(--brass-soft); }
+      .lm-session-name { font-size: 12px; font-weight: 600; color: var(--ink); }
+      .lm-session-id { font-family: var(--font-mono); font-size: 10px; color: var(--ink-soft); }
 
-      .lm-nav { display: flex; gap: 4px; background: var(--panel-alt); padding: 8px 18px; border-bottom: 1px solid var(--border); }
-      .lm-nav-item { background: none; border: none; padding: 8px 14px; font-size: 13px; color: var(--ink-soft); display: flex; align-items: center; gap: 6px; border-radius: 3px; }
-      .lm-nav-item:hover { background: rgba(0,0,0,0.04); }
-      .lm-nav-active { background: var(--panel); color: var(--navy-deep); font-weight: 600; box-shadow: 0 1px 0 var(--brass) inset; }
+      .lm-nav { display: flex; gap: 6px; background: var(--bg); padding: 10px 18px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+      .lm-nav-item { background: none; border: none; padding: 8px 16px; font-size: 13px; color: var(--ink-soft); display: flex; align-items: center; gap: 6px; border-radius: 999px; }
+      .lm-nav-item:hover { background: var(--panel-alt); color: var(--ink); }
+      .lm-nav-active { background: var(--navy); color: #fff; font-weight: 600; box-shadow: 0 8px 20px -10px rgba(91,108,255,0.8); }
 
       .lm-main { padding: 24px; flex: 1; }
       .lm-panel { max-width: 760px; margin: 0 auto; }
       .lm-panel-wide { max-width: 1080px; }
       .lm-eyebrow { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--brass); margin-bottom: 4px; }
-      .lm-h2 { font-family: var(--font-display); font-size: 22px; font-weight: 600; color: var(--navy-deep); margin: 0 0 8px; }
-      .lm-h3 { font-family: var(--font-display); font-size: 16px; font-weight: 600; color: var(--navy-deep); margin: 28px 0 10px; }
+      .lm-h2 { font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--ink); margin: 0 0 8px; }
+      .lm-h3 { font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--ink); margin: 28px 0 10px; }
       .lm-h3-note { font-family: var(--font-body); font-weight: 400; font-size: 12px; color: var(--ink-soft); }
 
       /* Supervisor dashboard: grouped sections + jump-nav, so a long page of
          KPIs/charts/tables reads as a few labeled clusters instead of one
          undifferentiated scroll. Purely presentational — every KPI, chart,
          table and action inside is unchanged. */
-      .lm-dash-jumpnav { position: sticky; top: 0; z-index: 5; display: flex; gap: 6px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 22px; }
-      .lm-dash-jump-btn { background: none; border: none; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); padding: 7px 12px; border-radius: 4px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
-      .lm-dash-jump-btn:hover { background: var(--panel-alt); color: var(--navy-deep); }
-      .lm-dash-section { background: var(--panel-alt); border: 1px solid var(--border); border-radius: 8px; padding: 20px 22px 24px; margin-bottom: 20px; scroll-margin-top: 66px; }
+      .lm-dash-jumpnav { position: sticky; top: 0; z-index: 5; display: flex; gap: 6px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 8px; margin-bottom: 22px; }
+      .lm-dash-jump-btn { background: none; border: none; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); padding: 7px 12px; border-radius: 999px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+      .lm-dash-jump-btn:hover { background: var(--panel-alt); color: var(--ink); }
+      .lm-dash-section { background: var(--panel-alt); border: 1px solid var(--border); border-radius: 22px; padding: 20px 22px 24px; margin-bottom: 20px; scroll-margin-top: 66px; }
       .lm-dash-section-head { display: flex; align-items: center; gap: 8px; color: var(--brass); margin-bottom: 4px; }
       .lm-dash-section-head h3 { font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--brass); margin: 0; }
       .lm-dash-section .lm-h3:first-of-type { margin-top: 6px; }
@@ -1535,16 +1704,16 @@ function GlobalStyle() {
       .lm-kpi-flag { border-top-color: var(--red) !important; }
 
       .lm-scan-idle { display: flex; flex-direction: column; gap: 20px; }
-      .lm-upload-box { background: var(--panel); border: 1.5px dashed var(--border); border-radius: 6px; padding: 28px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+      .lm-upload-box { background: var(--panel); border: 1.5px dashed var(--border); border-radius: 22px; padding: 28px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
       .lm-upload-text { font-size: 13px; color: var(--ink-soft); margin: 0; }
       .lm-btn-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
-      .lm-samples { background: var(--panel-alt); border-radius: 6px; padding: 16px 18px; }
+      .lm-samples { background: var(--panel-alt); border-radius: 20px; padding: 16px 18px; }
       .lm-samples-label { font-size: 12px; color: var(--ink-soft); margin-bottom: 10px; }
 
-      .lm-btn { display: inline-flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--border); color: var(--ink); font-size: 12.5px; padding: 8px 14px; border-radius: 3px; }
+      .lm-btn { display: inline-flex; align-items: center; gap: 6px; background: var(--panel-alt); border: 1px solid var(--border); color: var(--ink); font-size: 12.5px; padding: 8px 16px; border-radius: 999px; }
       .lm-btn:hover { border-color: var(--navy); }
-      .lm-btn-primary { background: var(--navy); color: #fff; border-color: var(--navy); }
-      .lm-btn-primary:hover { background: var(--navy-deep); }
+      .lm-btn-primary { background: var(--navy); color: #fff; border-color: var(--navy); box-shadow: 0 10px 24px -12px rgba(91,108,255,0.8); }
+      .lm-btn-primary:hover { background: var(--brass-strong); }
       .lm-btn:disabled, .lm-btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
       .lm-btn:disabled:hover { border-color: var(--border); }
       .lm-btn-primary:disabled:hover { background: var(--navy); }
@@ -1556,17 +1725,17 @@ function GlobalStyle() {
       .lm-spin { animation: lmspin 900ms linear infinite; }
       @keyframes lmspin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-      .lm-error { display: flex; align-items: center; gap: 10px; background: var(--red-soft); border-radius: 4px; padding: 14px 16px; font-size: 13px; }
+      .lm-error { display: flex; align-items: center; gap: 10px; background: var(--red-soft); border-radius: 16px; padding: 14px 16px; font-size: 13px; }
 
       .lm-retake { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; padding: 8px 0; }
       .lm-retake-reason { font-size: 13.5px; color: var(--ink-soft); max-width: 420px; margin: 0; }
 
       @keyframes stampIn { 0% { opacity: 0; transform: scale(1.7) rotate(-9deg); } 60% { opacity: 1; transform: scale(0.95) rotate(-4deg); } 100% { opacity: 1; transform: scale(1) rotate(-4deg); } }
-      .lm-stamp { display: inline-block; align-self: center; font-family: var(--font-body); font-weight: 700; font-size: 15px; letter-spacing: 0.09em; padding: 8px 18px; border: 3px double currentColor; border-radius: 3px; transform: rotate(-4deg); mix-blend-mode: multiply; animation: stampIn 260ms ease-out; margin: 4px 0 16px; }
+      .lm-stamp { display: inline-block; align-self: center; font-family: var(--font-body); font-weight: 700; font-size: 15px; letter-spacing: 0.09em; padding: 8px 18px; border: 3px double currentColor; border-radius: 12px; transform: rotate(-4deg); animation: stampIn 260ms ease-out; margin: 4px 0 16px; }
       @media (prefers-reduced-motion: reduce) { .lm-stamp { animation: none; } }
 
       .lm-fields { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
-      .lm-field-row { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 10px 12px; }
+      .lm-field-row { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 10px 12px; }
       .lm-field-top { display: flex; align-items: center; gap: 8px; }
       .lm-field-name { font-size: 13px; font-weight: 500; flex: 1; }
       .lm-field-badge { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 3px; }
@@ -1578,7 +1747,7 @@ function GlobalStyle() {
       .lm-field-citation { font-family: var(--font-mono); font-size: 10.5px; color: var(--brass); margin-top: 4px; }
       .lm-field-correct-btn { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; background: none; border: 1px dashed var(--border); border-radius: 3px; padding: 3px 8px; font-size: 11px; color: var(--ink-soft); cursor: pointer; }
       .lm-field-correct-btn:hover { border-color: var(--brass); color: var(--brass); }
-      .lm-field-correction { display: flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 11.5px; color: var(--navy); background: var(--brass-soft); border-radius: 3px; padding: 4px 8px; }
+      .lm-field-correction { display: flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 11.5px; color: var(--ink); background: var(--brass-soft); border-radius: 10px; padding: 4px 8px; }
       .lm-corrections-audit { background: var(--panel-alt); border-radius: 4px; padding: 10px 12px; margin-bottom: 16px; }
       .lm-correction-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--border); }
       .lm-correction-row:first-of-type { border-top: none; }
@@ -1588,17 +1757,17 @@ function GlobalStyle() {
       .lm-integrity-label { display: flex; align-items: center; gap: 5px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--brass); margin-bottom: 2px; }
       .lm-integrity-row { display: flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); }
 
-      .lm-save-form { display: flex; flex-direction: column; gap: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 16px; }
+      .lm-save-form { display: flex; flex-direction: column; gap: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 18px; padding: 16px; }
       .lm-form-row { display: flex; align-items: center; gap: 10px; }
       .lm-form-row label { font-size: 12px; color: var(--ink-soft); width: 70px; flex-shrink: 0; }
-      .lm-form-row input, .lm-form-row select { flex: 1; border: 1px solid var(--border); border-radius: 3px; padding: 7px 9px; font-size: 13px; background: #fff; }
+      .lm-form-row input, .lm-form-row select { flex: 1; border: 1px solid var(--border); border-radius: 12px; padding: 7px 9px; font-size: 13px; background: var(--navy-deep); color: var(--ink); }
       .lm-saved-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
       .lm-saved-msg { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--green); }
 
       .lm-history-controls { display: flex; gap: 10px; margin-bottom: 16px; }
-      .lm-search { flex: 1; display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 3px; padding: 7px 10px; background: #fff; }
-      .lm-search input { border: none; outline: none; flex: 1; font-size: 13px; }
-      .lm-history-controls select { border: 1px solid var(--border); border-radius: 3px; padding: 7px 10px; font-size: 13px; background: #fff; }
+      .lm-search { flex: 1; display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 999px; padding: 7px 14px; background: var(--panel); }
+      .lm-search input { border: none; outline: none; flex: 1; font-size: 13px; background: transparent; color: var(--ink); }
+      .lm-history-controls select { border: 1px solid var(--border); border-radius: 999px; padding: 7px 10px; font-size: 13px; background: var(--panel); color: var(--ink); }
 
       .lm-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 4px; }
       .lm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -1609,9 +1778,9 @@ function GlobalStyle() {
       .lm-empty { text-align: center; color: var(--ink-soft); padding: 24px; }
 
       .lm-kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 8px; }
-      .lm-kpi { background: var(--panel); border: 1px solid var(--border); border-top: 3px solid var(--brass); border-radius: 4px; padding: 14px 16px; }
+      .lm-kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 18px; padding: 14px 16px; }
       .lm-kpi-label { font-size: 11px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
-      .lm-kpi-value { font-family: var(--font-display); font-size: 24px; font-weight: 600; color: var(--navy-deep); }
+      .lm-kpi-value { font-family: var(--font-display); font-size: 24px; font-weight: 700; color: var(--ink); }
 
       .lm-chart { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 12px; }
 
@@ -1620,10 +1789,10 @@ function GlobalStyle() {
       .lm-heatmap-header { font-size: 11px; color: var(--ink-soft); }
       .lm-heatmap-col-label { text-align: center; padding: 4px 0; }
       .lm-heatmap-row-label { font-size: 12.5px; display: flex; align-items: center; padding-right: 8px; }
-      .lm-heatmap-cell { display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 12px; border-radius: 3px; padding: 12px 4px; color: var(--navy-deep); }
+      .lm-heatmap-cell { display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 12px; border-radius: 10px; padding: 12px 4px; color: var(--ink); }
 
-      .lm-modal-scrim { position: fixed; inset: 0; background: rgba(19,28,46,0.45); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 10; }
-      .lm-modal { background: var(--panel); border-radius: 6px; padding: 20px 22px; width: 100%; max-width: 420px; max-height: 80vh; overflow-y: auto; }
+      .lm-modal-scrim { position: fixed; inset: 0; background: rgba(0,0,0,0.72); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 10; }
+      .lm-modal { background: var(--panel); border-radius: 24px; padding: 20px 22px; width: 100%; max-width: 420px; max-height: 80vh; overflow-y: auto; border: 1px solid rgba(255,255,255,0.08); }
       .lm-modal-wide { max-width: 520px; }
       .lm-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
       .lm-case-meta { display: flex; gap: 6px; font-size: 12px; color: var(--ink-soft); margin-bottom: 10px; flex-wrap: wrap; }
@@ -1636,9 +1805,9 @@ function GlobalStyle() {
       .lm-changelog-date { font-size: 11px; color: var(--ink-soft); }
       .lm-changelog-approved { display: flex; align-items: center; gap: 3px; font-size: 10.5px; color: var(--green); margin-left: auto; }
       .lm-changelog-desc { font-size: 12.5px; color: var(--ink-soft); }
-      .lm-changelog-new { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em; color: var(--navy); background: var(--brass-soft); padding: 1px 6px; border-radius: 3px; }
+      .lm-changelog-new { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em; color: var(--ink); background: var(--brass-soft); padding: 1px 6px; border-radius: 999px; }
 
-      .lm-ruleadmin-active { background: var(--panel); border: 1px solid var(--border); border-top: 3px solid var(--brass); border-radius: 4px; padding: 14px 16px; margin-bottom: 16px; }
+      .lm-ruleadmin-active { background: var(--panel); border: 1px solid var(--border); border-radius: 18px; padding: 14px 16px; margin-bottom: 16px; }
       .lm-ruleadmin-active-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
       .lm-ruleadmin-active-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); }
       .lm-ruleadmin-active-desc { font-size: 13px; color: var(--ink); }
@@ -1647,7 +1816,7 @@ function GlobalStyle() {
       .lm-ruleadmin-editor-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
       .lm-ruleadmin-editor-col { display: flex; flex-direction: column; gap: 6px; }
       .lm-ruleadmin-col-label { display: flex; align-items: center; gap: 5px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); }
-      .lm-ruleadmin-textarea { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--border); border-radius: 3px; padding: 10px; resize: vertical; background: #fff; line-height: 150%; }
+      .lm-ruleadmin-textarea { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 10px; resize: vertical; background: var(--navy-deep); color: var(--ink); line-height: 150%; }
 
       .lm-diff { font-family: var(--font-mono); font-size: 11.5px; background: var(--panel-alt); border-radius: 3px; padding: 10px; min-height: 140px; overflow-y: auto; }
       .lm-diff-empty { color: var(--ink-soft); }
@@ -1655,8 +1824,8 @@ function GlobalStyle() {
       .lm-diff-removed { background: var(--red-soft); color: var(--red); text-decoration: line-through; }
       .lm-diff-added { background: var(--green-soft); color: var(--green); }
 
-      .lm-ruleadmin-review { display: flex; flex-direction: column; gap: 10px; background: var(--brass-soft); border-radius: 4px; padding: 14px; }
-      .lm-ruleadmin-review-label { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--navy-deep); }
+      .lm-ruleadmin-review { display: flex; flex-direction: column; gap: 10px; background: var(--brass-soft); border-radius: 16px; padding: 14px; }
+      .lm-ruleadmin-review-label { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--ink); }
       .lm-ruleadmin-comment { font-size: 12px; font-style: italic; color: var(--ink-soft); margin-top: 4px; }
 
       @media (max-width: 640px) {
@@ -1670,13 +1839,13 @@ function GlobalStyle() {
 
       .lm-decision-badge { display: flex; align-items: center; gap: 7px; font-size: 12.5px; padding: 9px 12px; border-radius: 4px; margin-bottom: 14px; }
       .lm-decision-confirmed { background: var(--green-soft); color: var(--green); }
-      .lm-decision-disputed { background: var(--brass-soft); color: var(--navy-deep); }
+      .lm-decision-disputed { background: var(--brass-soft); color: var(--ink); }
 
       .lm-notice-preview { background: var(--panel-alt); border: 1px solid var(--border); border-radius: 4px; padding: 14px 16px; margin-bottom: 14px; }
-      .lm-notice-title { font-family: var(--font-display); font-weight: 700; font-size: 14px; letter-spacing: 0.08em; color: var(--navy-deep); margin-bottom: 8px; }
+      .lm-notice-title { font-family: var(--font-display); font-weight: 700; font-size: 14px; letter-spacing: 0.08em; color: var(--ink); margin-bottom: 8px; }
       .lm-notice-line { font-size: 12.5px; color: var(--ink); margin-bottom: 3px; }
 
-      .lm-sig-canvas { width: 100%; max-width: 280px; height: 100px; border: 1.5px dashed var(--border); border-radius: 4px; background: #fff; display: block; cursor: crosshair; touch-action: none; }
+      .lm-sig-canvas { width: 100%; max-width: 280px; height: 100px; border: 1.5px dashed var(--border); border-radius: 12px; background: var(--navy-deep); display: block; cursor: crosshair; touch-action: none; }
 
       .lm-assign-list { display: flex; flex-direction: column; gap: 8px; }
       .lm-assign-item { display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 10px 12px; font-size: 13px; cursor: pointer; }
@@ -1688,11 +1857,11 @@ function GlobalStyle() {
 
       .lm-scale-section { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 14px 16px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }
       .lm-scale-row { display: flex; align-items: center; gap: 8px; }
-      .lm-scale-row input { width: 100px; border: 1px solid var(--border); border-radius: 3px; padding: 7px 9px; font-size: 13px; }
+      .lm-scale-row input { width: 100px; border: 1px solid var(--border); border-radius: 12px; padding: 7px 9px; font-size: 13px; background: var(--navy-deep); color: var(--ink); }
       .lm-scale-unit { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); }
 
       .lm-exempt-badge { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 10px; border-radius: 20px; margin: 0 0 14px; }
-      .lm-exempt-yes { background: var(--brass-soft); color: var(--navy-deep); }
+      .lm-exempt-yes { background: var(--brass-soft); color: var(--ink); }
       .lm-exempt-no { background: var(--panel-alt); color: var(--ink-soft); }
 
       .lm-risk-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 20px; font-size: 12px; }
@@ -1718,7 +1887,7 @@ function GlobalStyle() {
       .lm-calib-due_soon { background: #F3DCC8; color: #8a5a1f; }
       .lm-calib-overdue { background: var(--red-soft); color: var(--red); }
 
-      .lm-source-badge { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; padding: 3px 8px; border-radius: 20px; background: var(--brass-soft); color: var(--navy-deep); white-space: nowrap; }
+      .lm-source-badge { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; padding: 3px 8px; border-radius: 20px; background: var(--brass-soft); color: var(--ink); white-space: nowrap; }
       .lm-source-badge-small { font-size: 9.5px; padding: 2px 6px; }
 
       .lm-ecom-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }

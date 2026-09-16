@@ -78,7 +78,7 @@ function ClauseRow({ clause, editable, onSave, onRemove }) {
     <div className="flex items-start gap-3 rounded border border-border bg-panel px-3 py-2.5">
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex flex-wrap items-center gap-2">
-          <span className="font-mono text-[12px] font-semibold text-navy-deep">{clause.ref}</span>
+          <span className="font-mono text-[12px] font-semibold text-ink">{clause.ref}</span>
           <Badge tone={CATEGORY_TONE[clause.category] || "neutral"}>{clause.category}</Badge>
         </div>
         <div className="text-[13px] leading-snug text-ink">{clause.body}</div>
@@ -123,10 +123,10 @@ function DiffPanel({ diff, emptyLabel = "No changes." }) {
 function RegulaSyncUpload({ uploading, error, sources, onFile }) {
   const fileInputRef = useRef(null);
   return (
-    <div className="mb-1 flex flex-col gap-3 rounded-lg border border-brass/50 bg-gradient-to-br from-panel to-panel-alt p-4 shadow-sm">
+    <div className="mb-1 flex flex-col gap-3 rounded-[22px] border border-navy/30 bg-gradient-to-br from-panel to-panel-alt p-4">
       <div className="flex items-center gap-2">
         <Sparkles size={15} className="text-brass-strong" />
-        <span className="font-display text-[13.5px] font-bold text-navy-deep">RegulaSync</span>
+        <span className="font-display text-[13.5px] font-bold text-ink">RegulaSync</span>
         <span className="rounded-full bg-navy px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-white">AI extraction</span>
       </div>
       <p className="text-[12px] leading-relaxed text-ink-soft">
@@ -137,7 +137,7 @@ function RegulaSyncUpload({ uploading, error, sources, onFile }) {
         type="button"
         onClick={() => fileInputRef.current?.click()}
         disabled={uploading}
-        className="flex items-center justify-center gap-2 rounded-md border-2 border-dashed border-brass/50 bg-panel/70 py-3 text-[12.5px] font-medium text-navy-deep transition-colors hover:border-brass hover:bg-brass-soft disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-navy/40 bg-panel/70 py-3 text-[12.5px] font-medium text-ink transition-colors hover:border-navy hover:bg-brass-soft disabled:cursor-not-allowed disabled:opacity-60"
       >
         {uploading ? (
           <><Loader2 className="animate-spin" size={15} /> Reading document &amp; extracting clauses…</>
@@ -482,14 +482,14 @@ export function RuleAdminView({ ruleVersions, onPublish, adminName = "Rule Admin
           <div className="mb-3 mt-2 flex gap-1 rounded-md border border-border bg-panel-alt p-1">
             <button
               type="button"
-              className={"flex-1 rounded px-3 py-1.5 text-[12.5px] font-semibold transition-colors " + (editorMode === "catalog" ? "bg-panel text-navy-deep shadow-sm" : "text-ink-soft")}
+              className={"flex-1 rounded px-3 py-1.5 text-[12.5px] font-semibold transition-colors " + (editorMode === "catalog" ? "bg-panel text-ink shadow-sm" : "text-ink-soft")}
               onClick={() => setEditorMode("catalog")}
             >
               Clause catalog
             </button>
             <button
               type="button"
-              className={"flex-1 rounded px-3 py-1.5 text-[12.5px] font-semibold transition-colors " + (editorMode === "raw" ? "bg-panel text-navy-deep shadow-sm" : "text-ink-soft")}
+              className={"flex-1 rounded px-3 py-1.5 text-[12.5px] font-semibold transition-colors " + (editorMode === "raw" ? "bg-panel text-ink shadow-sm" : "text-ink-soft")}
               onClick={() => setEditorMode("raw")}
             >
               Raw text (advanced)
@@ -714,7 +714,7 @@ export function RuleAdminView({ ruleVersions, onPublish, adminName = "Rule Admin
                         <button type="button" className="text-[12px] text-ink-soft underline" onClick={() => setRollbackConfirm(null)}>Cancel</button>
                       </>
                     ) : (
-                      <button type="button" aria-label="Roll back to this version" className="rounded p-1.5 text-ink-soft hover:bg-brass-soft hover:text-navy-deep" onClick={() => askRollback(r)}>
+                      <button type="button" aria-label="Roll back to this version" className="rounded p-1.5 text-ink-soft hover:bg-brass-soft hover:text-ink" onClick={() => askRollback(r)}>
                         <RotateCcw size={14} />
                       </button>
                     )

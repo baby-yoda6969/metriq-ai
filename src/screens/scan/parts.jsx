@@ -27,7 +27,7 @@ export function Stamp({ status }) {
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.5, ease: [0.34, 1.56, 0.64, 1] }}
       className={
-        "inline-block -rotate-[4deg] rounded border-[3px] border-double px-4 py-2 font-display text-lg font-bold tracking-wide [mix-blend-mode:multiply] " +
+        "inline-block -rotate-[4deg] rounded-xl border-[3px] border-double px-4 py-2 font-display text-lg font-bold tracking-wide " +
         cfg.className
       }
     >
@@ -51,7 +51,7 @@ const FIELD_BADGE_TONE = {
 export function FieldRow({ field, correction, onRequestCorrection }) {
   const citation = RULE_CITATIONS[field.name];
   return (
-    <div className="rounded border border-border bg-panel p-4">
+    <div className="rounded-2xl border border-white/8 bg-panel p-4">
       <div className="flex items-center gap-2">
         <StatusIcon status={field.status === "compliant" ? "compliant" : "non_compliant"} />
         <span className="flex-1 text-sm font-semibold text-ink">{field.name}</span>
@@ -63,7 +63,7 @@ export function FieldRow({ field, correction, onRequestCorrection }) {
         <div className="mt-1.5 font-mono text-[11px] text-brass">{citation.rule}, {citation.act}</div>
       )}
       {correction ? (
-        <div className="mt-2.5 flex items-center gap-1.5 rounded bg-brass-soft px-2.5 py-1.5 text-[12.5px] text-navy-deep">
+        <div className="mt-2.5 flex items-center gap-1.5 rounded-xl bg-brass-soft px-2.5 py-1.5 text-[12.5px] text-ink">
           <PenLine size={12} /> Corrected by {correction.correctedBy} to “{correction.correctedValue}” (was “{correction.originalValue ?? "not set"}”)
         </div>
       ) : onRequestCorrection ? (

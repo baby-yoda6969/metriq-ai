@@ -13,7 +13,7 @@ export const badgeVariants = cva(
         compliant: "bg-green-soft text-green",
         "non-compliant": "bg-red-soft text-red",
         caution: "bg-brass-soft text-brass",
-        navy: "bg-navy text-paper",
+        navy: "bg-navy text-white",
       },
     },
     defaultVariants: { tone: "neutral" },

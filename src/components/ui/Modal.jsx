@@ -15,16 +15,16 @@ export function Modal({ open, onOpenChange, title, wide = false, children, foote
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-navy-deep/60 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=open]:fade-in" />
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/70 backdrop-blur-[6px] data-[state=open]:animate-in data-[state=open]:fade-in" />
         <Dialog.Content
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 max-h-[85vh] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-md border border-border bg-panel shadow-xl focus:outline-none",
+            "fixed left-1/2 top-1/2 z-50 max-h-[85vh] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[24px] border border-white/10 bg-panel shadow-[0_24px_80px_-20px_rgba(0,0,0,0.8)] focus:outline-none",
             wide ? "w-[min(880px,92vw)]" : "w-[min(480px,92vw)]"
           )}
         >
-          <div className="flex items-center justify-between border-b border-border px-5 py-4">
-            <Dialog.Title className="font-display text-lg font-semibold text-navy-deep">{title}</Dialog.Title>
-            <Dialog.Close className="rounded p-1 text-ink-soft hover:bg-panel-alt hover:text-ink">
+          <div className="flex items-center justify-between border-b border-white/8 px-5 py-4">
+            <Dialog.Title className="font-display text-lg font-semibold text-ink">{title}</Dialog.Title>
+            <Dialog.Close className="rounded-full p-1 text-ink-soft hover:bg-panel-alt hover:text-ink">
               <X size={16} />
             </Dialog.Close>
           </div>

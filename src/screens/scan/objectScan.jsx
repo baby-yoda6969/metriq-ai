@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Camera, RotateCw } from "lucide-react";
 import { Button } from "../../components/ui/Button.jsx";
 import { InlineBanner } from "../../components/ui/InlineBanner.jsx";
+import { ScanBeam } from "../../components/ScanMock.jsx";
 import { identifyObject } from "../../lib/api.js";
 
 const SCAN_DURATION_MS = 6000;
@@ -116,7 +117,7 @@ export function ObjectScanCapture({ products, onMatched }) {
         </InlineBanner>
       )}
 
-      <div className="relative mx-auto aspect-square w-full max-w-[360px] overflow-hidden rounded-md bg-navy-deep">
+      <div className="relative mx-auto aspect-square w-full max-w-[360px] overflow-hidden rounded-[28px] border border-white/10 bg-navy-deep">
         <video
           ref={videoRef}
           autoPlay
@@ -130,6 +131,7 @@ export function ObjectScanCapture({ products, onMatched }) {
             Requesting camera…
           </div>
         )}
+        {cameraState === "ready" && <ScanBeam />}
         {cameraState === "ready" && scanState !== "waiting" && (
           <ScanRing state={scanState} durationMs={SCAN_DURATION_MS} />
         )}

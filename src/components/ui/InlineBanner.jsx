@@ -14,7 +14,7 @@ export function InlineBanner({ tone = "info", className, children, ...props }) {
     info: "bg-panel-alt text-ink-soft border-border",
   }[tone];
   return (
-    <div className={cn("flex items-start gap-2 rounded border px-3 py-2.5 text-sm", toneClass, className)} {...props}>
+    <div className={cn("flex items-start gap-2 rounded-2xl border px-3 py-2.5 text-sm", toneClass, className)} {...props}>
       <Icon size={15} className="mt-0.5 shrink-0" />
       <div>{children}</div>
     </div>

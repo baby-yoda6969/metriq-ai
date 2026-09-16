@@ -1,55 +1,384 @@
 @import "tailwindcss";
 
-/* Design tokens for the Tailwind utility layer. Mirrors src/lib/theme.js,
-   kept here as plain hex because Tailwind v4's @theme is CSS, not JS; the
-   legacy `.lm-*` CSS variables (still used by most of App.jsx pending the
-   screen-by-screen rewrite) are generated separately from theme.js inside
-   App.jsx's GlobalStyle. Keep both in sync with theme.js by hand until the
-   rewrite is complete and one of the two systems is retired. */
 @theme {
-  --color-bg: #F7F6F2;
-  --color-panel: #FFFFFF;
-  --color-panel-alt: #EFEDE6;
-  --color-ink: #181B22;
-  --color-ink-soft: #5B5F68;
-  --color-navy: #1F2E4A;
-  --color-navy-deep: #131C2E;
-  --color-brass: #AD7F33;
-  --color-brass-soft: #E9DAB8;
-  --color-brass-strong: #C79341;
-  --color-green: #2C7A55;
-  --color-green-soft: #E3F0E9;
-  --color-red: #B23A34;
-  --color-red-soft: #F6E4E2;
-  --color-border: #DEDACD;
-  --color-paper: #F1EEE4;
+  --color-bg: var(--mq-bg);
+  --color-panel: var(--mq-panel);
+  --color-panel-alt: var(--mq-panel-alt);
+  --color-ink: var(--mq-ink);
+  --color-ink-soft: var(--mq-ink-soft);
+  --color-navy: var(--mq-navy);
+  --color-navy-deep: var(--mq-navy-deep);
+  --color-brass: var(--mq-brass);
+  --color-brass-soft: var(--mq-brass-soft);
+  --color-brass-strong: var(--mq-brass-strong);
+  --color-green: var(--mq-green);
+  --color-green-soft: var(--mq-green-soft);
+  --color-red: var(--mq-red);
+  --color-red-soft: var(--mq-red-soft);
+  --color-border: var(--mq-border);
+  --color-paper: var(--mq-paper);
 
-  --font-display: 'Spectral', Georgia, serif;
-  --font-body: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Manrope', 'Segoe UI', sans-serif;
+  --font-body: 'Manrope', 'Segoe UI', sans-serif;
   --font-mono: 'IBM Plex Mono', 'SF Mono', monospace;
 
   --ease-lm-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-lm-back: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-:root {
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --mq-bg: #000000;
+  --mq-panel: #12151A;
+  --mq-panel-alt: #181C22;
+  --mq-ink: #F7F8FA;
+  --mq-ink-soft: #8B93A0;
+  --mq-navy: #D0E0F8;
+  --mq-navy-deep: #000000;
+  --mq-brass: #D0E0F8;
+  --mq-brass-soft: #151A24;
+  --mq-brass-strong: #E8F0FC;
+  --mq-green: #8FCB9B;
+  --mq-green-soft: #1A2A1C;
+  --mq-red: #D98980;
+  --mq-red-soft: #2C1816;
+  --mq-border: #242A33;
+  --mq-paper: #F7F8FA;
+  --mq-stage: #000000;
+  --mq-hairline: rgba(247, 248, 250, 0.08);
+  --mq-scan-hero: #07080A;
+  --mq-tabbar: linear-gradient(to top, #000000 70%, rgba(0, 0, 0, 0.92));
+}
+
+[data-theme="light"] {
   color-scheme: light;
+  --mq-bg: #F3F5F8;
+  --mq-panel: #FFFFFF;
+  --mq-panel-alt: #EBEEF3;
+  --mq-ink: #101820;
+  --mq-ink-soft: #6B7585;
+  --mq-navy: #48648C;
+  --mq-navy-deep: #101820;
+  --mq-brass: #48648C;
+  --mq-brass-soft: #E4EAF2;
+  --mq-brass-strong: #708098;
+  --mq-green: #2F7A4A;
+  --mq-green-soft: #E3F2E8;
+  --mq-red: #B23A34;
+  --mq-red-soft: #F6E4E2;
+  --mq-border: #D7DCE4;
+  --mq-paper: #101820;
+  --mq-stage: #E8ECF2;
+  --mq-hairline: rgba(16, 24, 32, 0.08);
+  --mq-scan-hero: #FFFFFF;
+  --mq-tabbar: linear-gradient(to top, #F3F5F8 70%, rgba(243, 245, 248, 0.94));
 }
 
 * {
   box-sizing: border-box;
 }
 
-html, body {
+/* Hide scrollbars everywhere; scrolling still works via touch/wheel. */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+html, body, #root {
   margin: 0;
   padding: 0;
+  height: 100%;
+  overscroll-behavior: none;
 }
 
 body {
   min-height: 100vh;
-  background: #F7F6F2;
+  background: var(--mq-stage);
+  color: var(--mq-ink);
+  font-family: 'Manrope', 'Segoe UI', sans-serif;
+  transition: background-color 200ms ease, color 200ms ease;
 }
 
 #root {
   min-height: 100vh;
+}
+
+::selection {
+  background: rgba(208, 224, 248, 0.45);
+  color: #000000;
+}
+
+[data-theme="light"] ::selection {
+  background: rgba(72, 100, 140, 0.28);
+  color: #101820;
+}
+
+@keyframes metriq-scan-beam {
+  0%, 100% { top: 16%; opacity: 0.65; }
+  50% { top: 78%; opacity: 1; }
+}
+
+.metriq-scan-beam {
+  position: absolute;
+  left: 7%;
+  right: 7%;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--mq-brass) 18%, var(--mq-ink) 50%, var(--mq-brass) 82%, transparent);
+  box-shadow:
+    0 0 16px 5px color-mix(in srgb, var(--mq-brass) 35%, transparent),
+    0 0 42px 14px color-mix(in srgb, var(--mq-brass) 18%, transparent);
+  animation: metriq-scan-beam 2.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metriq-scan-beam {
+    animation: none;
+    top: 46%;
+  }
+}
+
+.app-stage {
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--mq-brass) 10%, transparent), transparent 48%),
+    var(--mq-stage);
+}
+
+.app-device {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  width: 100%;
+  max-width: 430px;
+  margin: 0 auto;
+  background: var(--mq-bg);
+  box-shadow: 0 0 0 1px var(--mq-hairline), 0 40px 80px -30px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  overscroll-behavior: none;
+  transition: background-color 200ms ease;
+}
+
+.app-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 20px;
+}
+
+.app-main--feed {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+/* —— Metriq branded loader —— */
+@keyframes mq-bar-pulse {
+  0%, 100% { opacity: 0.35; }
+  40%, 55% { opacity: 1; }
+}
+
+@keyframes mq-dot-pulse {
+  0%, 100% { opacity: 0.45; transform: scale(0.88); }
+  45%, 60% { opacity: 1; transform: scale(1.08); }
+}
+
+@keyframes mq-loader-breathe {
+  0%, 100% { opacity: 0.72; transform: scale(0.985); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes mq-loader-sheen {
+  0% { transform: translateX(-120%) skewX(-18deg); opacity: 0; }
+  25% { opacity: 0.55; }
+  55% { transform: translateX(140%) skewX(-18deg); opacity: 0; }
+  100% { transform: translateX(140%) skewX(-18deg); opacity: 0; }
+}
+
+@keyframes mq-loader-label {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.85; }
+}
+
+.metriq-loader-mark .mq-bar {
+  transform-origin: center;
+  animation: mq-bar-pulse 1.55s ease-in-out infinite;
+}
+
+.metriq-loader-mark .mq-bar-a { animation-delay: 0s; }
+.metriq-loader-mark .mq-bar-b { animation-delay: 0.18s; }
+.metriq-loader-mark .mq-bar-c { animation-delay: 0.36s; }
+
+.metriq-loader-mark .mq-dot {
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: mq-dot-pulse 1.55s ease-in-out infinite;
+  animation-delay: 0.5s;
+}
+
+.metriq-loader-lockup {
+  overflow: hidden;
+  animation: mq-loader-breathe 2.2s ease-in-out infinite;
+}
+
+.metriq-loader-sheen {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(208, 224, 248, 0.35) 45%,
+    transparent 70%
+  );
+  animation: mq-loader-sheen 2.4s ease-in-out infinite;
+}
+
+.metriq-loader-label {
+  animation: mq-loader-label 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metriq-loader-mark .mq-bar,
+  .metriq-loader-mark .mq-dot,
+  .metriq-loader-lockup,
+  .metriq-loader-sheen,
+  .metriq-loader-label {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* —— Startup splash (plays once) —— */
+@keyframes mq-splash-fade-out {
+  0%, 78% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes mq-splash-lockup-in {
+  0% { opacity: 0; transform: scale(0.92) translateY(12px); }
+  28% { opacity: 1; transform: scale(1) translateY(0); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes mq-splash-sheen {
+  0%, 32% { transform: translateX(-130%) skewX(-18deg); opacity: 0; }
+  42% { opacity: 0.55; }
+  58% { transform: translateX(140%) skewX(-18deg); opacity: 0; }
+  100% { transform: translateX(140%) skewX(-18deg); opacity: 0; }
+}
+
+@keyframes mq-splash-breathe {
+  0%, 30% { transform: scale(1); }
+  55% { transform: scale(1.03); }
+  78%, 100% { transform: scale(1); }
+}
+
+.metriq-splash {
+  animation: mq-splash-fade-out 3.2s ease-in-out forwards;
+}
+
+.metriq-splash-lockup {
+  animation:
+    mq-splash-lockup-in 3.2s cubic-bezier(0.16, 1, 0.3, 1) both,
+    mq-splash-breathe 3.2s ease-in-out both;
+  overflow: hidden;
+}
+
+.metriq-splash-sheen {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(208, 224, 248, 0.4) 45%,
+    transparent 70%
+  );
+  animation: mq-splash-sheen 3.2s ease-in-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metriq-splash,
+  .metriq-splash-lockup,
+  .metriq-splash-sheen {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.app-tabbar {
+  flex-shrink: 0;
+  z-index: 30;
+  padding: 6px 14px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: var(--mq-tabbar);
+  border-top: 1px solid var(--mq-hairline);
+}
+
+.app-tabbar-dock {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mq-panel) 92%, transparent);
+  box-shadow:
+    inset 0 0 0 1px var(--mq-hairline),
+    0 12px 28px -18px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(12px);
+}
+
+[data-theme="light"] .app-tabbar-dock {
+  background: color-mix(in srgb, var(--mq-panel) 96%, transparent);
+  box-shadow:
+    inset 0 0 0 1px var(--mq-hairline),
+    0 10px 24px -16px rgba(16, 24, 32, 0.18);
+}
+
+.scan-hero {
+  position: relative;
+  overflow: hidden;
+  height: 216px;
+  border-radius: 22px;
+  padding: 0;
+  background: var(--mq-scan-hero);
+  border: 1px solid color-mix(in srgb, var(--mq-brass) 35%, transparent);
+  box-shadow: 0 24px 40px -24px rgba(0, 0, 0, 0.35);
+}
+
+.scan-hero-frame {
+  position: absolute;
+  inset: 18px;
+  border-radius: 14px;
+  pointer-events: none;
+}
+
+.scan-hero-corner {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-color: var(--mq-brass);
+  border-style: solid;
+  border-width: 0;
+}
+
+.scan-hero-corner.tl { top: 0; left: 0; border-top-width: 2px; border-left-width: 2px; }
+.scan-hero-corner.tr { top: 0; right: 0; border-top-width: 2px; border-right-width: 2px; }
+.scan-hero-corner.bl { bottom: 0; left: 0; border-bottom-width: 2px; border-left-width: 2px; }
+.scan-hero-corner.br { bottom: 0; right: 0; border-bottom-width: 2px; border-right-width: 2px; }
+
+/* Theme-aware stand-ins for common white/ opacity borders */
+.mq-hairline {
+  border-color: var(--mq-hairline);
 }

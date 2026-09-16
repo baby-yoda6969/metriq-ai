@@ -4,7 +4,7 @@ import { cn } from "../../lib/utils.js";
 // repeated verbatim across HistoryView/DashboardView/PenaltyModal/BatchLedger.
 // Not yet consumed outside src/screens: wired up as each of those is ported.
 export function TableWrap({ className, children }) {
-  return <div className={cn("overflow-x-auto rounded border border-border", className)}>{children}</div>;
+  return <div className={cn("overflow-x-auto rounded-2xl border border-border", className)}>{children}</div>;
 }
 export function Table({ className, ...props }) {
   return <table className={cn("w-full border-collapse text-sm", className)} {...props} />;

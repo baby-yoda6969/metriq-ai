@@ -12,27 +12,33 @@ for the full spec.
    ```bash
    npm install
    ```
-2. Get a free Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey)
-   (no credit card needed for the free tier).
-3. Copy `.env.example` to `.env` and fill in your key:
+2. Copy `.env.example` to `.env` and add API keys:
    ```bash
    cp .env.example .env
    ```
-   ```
-   GEMINI_API_KEY=your_key_here
-   GEMINI_MODEL=gemini-2.5-flash
-   ```
-   `.env` is git-ignored — the key never gets committed, and the frontend never talks
-   to Google directly (see `server/index.js`).
+   - **GROQ_API_KEY** — label analysis, object ID, correction verify, RegulaSync (text)
+   - **GEMINI_3D_API_KEY** — AI Studio auth key (`AQ.*`) for 3D pack matching from photos
+
+   Keys stay in `.env` (git-ignored). The browser only calls `/api/*` on the local backend.
 
 ## Run
+
+**Development** (hot reload):
 
 ```bash
 npm run dev
 ```
 
-This starts both the Vite frontend (http://localhost:5173) and the Express backend
-(http://localhost:8787) together. Vite proxies `/api/*` requests to the backend, so
+**Production** (single port after build):
+
+```bash
+npm run build
+npm start
+```
+
+Open http://localhost:8787 — the Express server serves the built app and `/api/*`.
+
+Dev mode starts Vite (http://localhost:5173) and the API (http://localhost:8787). Vite proxies `/api/*` to the backend, so
 just open http://localhost:5173.
 
 - `npm run dev:client` — frontend only

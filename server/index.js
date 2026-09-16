@@ -1,79 +1,26 @@
+import dotenv from "dotenv";
+
+dotenv.config();
+
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { createRequire } from "module";
+import { callGroq, groqConfigured, parseJsonFromText } from "./groq.js";
+import { gemini3dConfigured, matchProductFromViews } from "./gemini3d.js";
+
+const require = createRequire(import.meta.url);
+const pdfParse = require("pdf-parse");
 // NOTE: deliberately not wiring in ./rules.js's applyDeterministicRules
 // here anymore — per-field compliant/non_compliant/missing verdicts are
 // Gemini's own judgment again, not independently re-derived. rules.js and
 // its tests are left in the codebase (a deterministic pass may get
 // reinstated later); they're just not called from this endpoint right now.
 
-dotenv.config();
-
 const app = express();
 const PORT = process.env.BACKEND_PORT || 8787;
-// The free tier's daily request cap (20/day per key, as of this writing) is
-// easy to blow through during a demo, so GEMINI_API_KEY_BACKUPS lets a few
-// spare keys stand in once the current one starts returning quota errors —
-// see callGemini below. Order: primary key first, then backups in the order
-// given; duplicates are dropped.
-const GEMINI_API_KEYS = [process.env.GEMINI_API_KEY, ...(process.env.GEMINI_API_KEY_BACKUPS || "").split(",")]
-  .map((k) => k.trim())
-  .filter((k, i, arr) => k && arr.indexOf(k) === i);
-// Flash-class model with the generous free-tier quota (PRD §8). Google also
-// publishes a "gemini-flash-latest" rolling alias, but in testing it routed to
-// a preview model that returned 503 "high demand" errors — pin to the stable
-// dated release instead, and bump via GEMINI_MODEL if a newer Flash ships.
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-
-// Tries each configured key in turn against the Gemini API, moving to the
-// next only when a key's own quota/rate-limit is the problem (HTTP 429, or
-// the RESOURCE_EXHAUSTED status Gemini reports even on some non-429
-// responses) — any other failure (bad request, model error, etc.) would
-// fail identically on every key, so it's returned immediately instead of
-// burning the rest of the pool retrying the same broken request.
-// Returns { response, data } on success, or throws the last error/response
-// once every key has been tried.
-async function callGemini(body) {
-  if (GEMINI_API_KEYS.length === 0) {
-    const err = new Error("Server is missing GEMINI_API_KEY. Add it to .env and restart the backend.");
-    err.isConfigError = true;
-    throw err;
-  }
-
-  let lastResult = null;
-  for (const key of GEMINI_API_KEYS) {
-    let response;
-    try {
-      response = await fetch(GEMINI_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-        body: JSON.stringify(body),
-      });
-    } catch (e) {
-      // Network-level failure isn't key-specific — no point trying the rest.
-      const err = new Error("Could not reach the Gemini API: " + (e && e.message ? e.message : String(e)));
-      err.isNetworkError = true;
-      throw err;
-    }
-
-    let data = null;
-    try {
-      data = await response.json();
-    } catch (e) {
-      // Unreadable body — also not something a different key would fix.
-      return { response, data: null };
-    }
-
-    const isQuotaError = response.status === 429
-      || (data && data.error && data.error.status === "RESOURCE_EXHAUSTED");
-    if (response.ok || !isQuotaError) {
-      return { response, data };
-    }
-    lastResult = { response, data };
-  }
-  return lastResult;
-}
 
 app.use(cors());
 app.use(express.json({ limit: "15mb" }));
@@ -152,61 +99,26 @@ app.post("/api/analyze", async (req, res) => {
     ? `${SYSTEM_PROMPT}\n\nCurrently active rule amendments to apply (version ${ruleVersion}), which take precedence over the general guidance above wherever they conflict:\n"""\n${ruleText}\n"""`
     : SYSTEM_PROMPT;
 
-  let geminiResponse, data;
+  let groqResult;
   try {
-    ({ response: geminiResponse, data } = await callGemini({
-      system_instruction: {
-        parts: [{ text: systemPrompt }],
-      },
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { inline_data: { mime_type: mediaType, data: base64 } },
-            { text: "Analyze this packaged commodity label photo." },
-          ],
-        },
-      ],
-      generationConfig: {
-        // Bumped from 2048: real photographed labels (vs. the old
-        // synthetic 7-line canvas mockups) can carry a lot more printed
-        // text — full ingredient lists, multiple plant addresses,
-        // nutrition tables — and the model was hitting MAX_TOKENS and
-        // returning truncated, unparseable JSON before finishing the
-        // fields array on some real packs.
-        maxOutputTokens: 4096,
-      },
-    }));
+    groqResult = await callGroq({
+      system: systemPrompt,
+      userText: "Analyze this packaged commodity label photo.",
+      images: [{ base64, mediaType }],
+      maxOutputTokens: 4096,
+    });
   } catch (e) {
     return res.status(e.isConfigError ? 500 : 502).json({ error: e.message });
   }
 
-  if (!data) {
-    return res.status(502).json({ error: "The Gemini API returned an unreadable response (HTTP " + geminiResponse.status + ")." });
+  if (!groqResult.ok) {
+    return res.status(502).json({ error: "Analysis request failed: " + groqResult.error });
   }
-
-  if (!geminiResponse.ok) {
-    const apiMsg = (data && data.error && data.error.message) || ("HTTP " + geminiResponse.status);
-    return res.status(502).json({ error: "Gemini request failed: " + apiMsg });
-  }
-
-  const candidate = data.candidates && data.candidates[0];
-  const textPart = candidate && candidate.content && candidate.content.parts && candidate.content.parts.find((p) => typeof p.text === "string");
-  if (!textPart) {
-    return res.status(502).json({ error: "The model didn't return any readable text in its response." });
-  }
-
-  const raw = textPart.text;
-  const match = raw.match(/\{[\s\S]*\}/);
-  const clean = match ? match[0] : raw.replace(/```json|```/g, "").trim();
 
   let parsed;
   try {
-    parsed = JSON.parse(clean);
+    parsed = parseJsonFromText(groqResult.text);
   } catch (e) {
-    if (candidate.finishReason === "MAX_TOKENS") {
-      return res.status(502).json({ error: "The response got cut off before it finished (this label had a lot to read). Try again." });
-    }
     return res.status(502).json({ error: "Couldn't parse the model's response as JSON." });
   }
 
@@ -245,43 +157,24 @@ Respond with ONLY this JSON (no markdown fences, no prose):
 
 Only return a name if you're at least reasonably confident — a blurry, empty, unrelated, or ambiguous frame should get match: null rather than a guess.`;
 
-  let geminiResponse, data;
+  let groqResult;
   try {
-    ({ response: geminiResponse, data } = await callGemini({
-      system_instruction: { parts: [{ text: prompt }] },
-      contents: [
-        {
-          role: "user",
-          parts: [{ inline_data: { mime_type: mediaType, data: base64 } }],
-        },
-      ],
-      // Bug fix: this endpoint's whole point is a quick per-frame check, but
-      // a "thinking"-capable model (see GEMINI_MODEL) spends part of
-      // maxOutputTokens on internal reasoning before it ever writes the
-      // answer — at 128 that reliably left too few tokens for the closing
-      // JSON, so every real match came back truncated (finishReason
-      // MAX_TOKENS), failed to parse, and silently fell through to
-      // match: null below, exactly as if nothing had been recognized.
-      // thinkingBudget: 0 turns that reasoning off for this trivial
-      // classification task, which also makes the demo's "identifying…"
-      // step noticeably faster.
-      generationConfig: { maxOutputTokens: 256, thinkingConfig: { thinkingBudget: 0 } },
-    }));
+    groqResult = await callGroq({
+      system: prompt,
+      userText: "Which product is in this frame?",
+      images: [{ base64, mediaType }],
+      maxOutputTokens: 256,
+    });
   } catch (e) {
     return res.status(e.isConfigError ? 500 : 502).json({ error: e.message });
   }
 
-  if (!data || !geminiResponse.ok) {
+  if (!groqResult.ok) {
     return res.json({ match: null });
   }
 
-  const candidate = data.candidates && data.candidates[0];
-  const textPart = candidate && candidate.content && candidate.content.parts && candidate.content.parts.find((p) => typeof p.text === "string");
-  if (!textPart) return res.json({ match: null });
-
-  const jsonMatch = textPart.text.match(/\{[\s\S]*\}/);
   try {
-    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : textPart.text);
+    const parsed = parseJsonFromText(groqResult.text);
     // Trust only an exact match against the names we actually sent —
     // never pass through arbitrary model output as if it were a validated
     // candidate name.
@@ -314,43 +207,24 @@ app.post("/api/verify-correction", async (req, res) => {
     return res.status(400).json({ error: "Request must include base64 image data, mediaType, fieldName, and correctedValue." });
   }
 
-  let geminiResponse, data;
+  let groqResult;
   try {
-    ({ response: geminiResponse, data } = await callGemini({
-      system_instruction: { parts: [{ text: VERIFY_CORRECTION_PROMPT }] },
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { inline_data: { mime_type: mediaType, data: base64 } },
-            { text: `Field: "${fieldName}". Claimed corrected value: "${correctedValue}".` },
-          ],
-        },
-      ],
-      generationConfig: { maxOutputTokens: 256 },
-    }));
+    groqResult = await callGroq({
+      system: VERIFY_CORRECTION_PROMPT,
+      userText: `Field: "${fieldName}". Claimed corrected value: "${correctedValue}".`,
+      images: [{ base64, mediaType }],
+      maxOutputTokens: 256,
+    });
   } catch (e) {
-    // Best-effort check — if Gemini is unreachable/unconfigured, don't block
-    // the correction; just report that verification wasn't possible.
     return res.json({ plausible: null, note: "Verification unavailable: couldn't reach the analysis service." });
   }
 
-  if (!data) {
-    return res.json({ plausible: null, note: "Verification unavailable: unreadable response." });
-  }
-  if (!geminiResponse.ok) {
+  if (!groqResult.ok) {
     return res.json({ plausible: null, note: "Verification unavailable: analysis service error." });
   }
 
-  const candidate = data.candidates && data.candidates[0];
-  const textPart = candidate && candidate.content && candidate.content.parts && candidate.content.parts.find((p) => typeof p.text === "string");
-  if (!textPart) {
-    return res.json({ plausible: null, note: "Verification unavailable: no readable response." });
-  }
-
-  const match = textPart.text.match(/\{[\s\S]*\}/);
   try {
-    const parsed = JSON.parse(match ? match[0] : textPart.text);
+    const parsed = parseJsonFromText(groqResult.text);
     return res.json({ plausible: !!parsed.plausible, note: String(parsed.note || "").slice(0, 200) });
   } catch (e) {
     return res.json({ plausible: null, note: "Verification unavailable: couldn't parse the response." });
@@ -389,43 +263,35 @@ app.post("/api/regulasync/extract", async (req, res) => {
     return res.status(400).json({ error: "RegulaSync currently accepts PDF documents only." });
   }
 
-  let geminiResponse, data;
+  let documentText;
   try {
-    ({ response: geminiResponse, data } = await callGemini({
-      system_instruction: { parts: [{ text: REGULASYNC_PROMPT }] },
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { inline_data: { mime_type: mediaType, data: base64 } },
-            { text: "Extract the new/amended regulatory requirements from this document." },
-          ],
-        },
-      ],
-      generationConfig: { maxOutputTokens: 2048 },
-    }));
+    const parsedPdf = await pdfParse(Buffer.from(base64, "base64"));
+    documentText = (parsedPdf.text || "").trim();
+  } catch (e) {
+    return res.status(400).json({ error: "Could not read text from this PDF." });
+  }
+  if (!documentText) {
+    return res.status(400).json({ error: "This PDF has no extractable text." });
+  }
+
+  let groqResult;
+  try {
+    groqResult = await callGroq({
+      system: REGULASYNC_PROMPT,
+      userText: documentText.slice(0, 48000),
+      maxOutputTokens: 2048,
+    });
   } catch (e) {
     return res.status(e.isConfigError ? 500 : 502).json({ error: e.message });
   }
 
-  if (!data) {
-    return res.status(502).json({ error: "The Gemini API returned an unreadable response (HTTP " + geminiResponse.status + ")." });
-  }
-  if (!geminiResponse.ok) {
-    const apiMsg = (data && data.error && data.error.message) || ("HTTP " + geminiResponse.status);
-    return res.status(502).json({ error: "RegulaSync request failed: " + apiMsg });
+  if (!groqResult.ok) {
+    return res.status(502).json({ error: "RegulaSync request failed: " + groqResult.error });
   }
 
-  const candidate = data.candidates && data.candidates[0];
-  const textPart = candidate && candidate.content && candidate.content.parts && candidate.content.parts.find((p) => typeof p.text === "string");
-  if (!textPart) {
-    return res.status(502).json({ error: "RegulaSync didn't return any readable text in its response." });
-  }
-
-  const jsonMatch = textPart.text.match(/\{[\s\S]*\}/);
   let parsed;
   try {
-    parsed = JSON.parse(jsonMatch ? jsonMatch[0] : textPart.text);
+    parsed = parseJsonFromText(groqResult.text);
   } catch (e) {
     return res.status(502).json({ error: "Couldn't parse RegulaSync's response as JSON." });
   }
@@ -497,6 +363,49 @@ function scheduleHandoffExpiry(code) {
   }, HANDOFF_TTL_MS);
 }
 
+app.post("/api/generate-3d", async (req, res) => {
+  const { views, brandHint } = req.body || {};
+  if (!Array.isArray(views) || views.length === 0) {
+    return res.status(400).json({ error: "Request must include a non-empty 'views' array of captured photos." });
+  }
+  const cleaned = views
+    .filter((v) => v && typeof v.base64 === "string" && v.base64.length > 0)
+    .slice(0, 6)
+    .map((v) => ({
+      base64: v.base64,
+      mediaType: typeof v.mediaType === "string" ? v.mediaType : "image/jpeg",
+      label: typeof v.label === "string" ? v.label.slice(0, 40) : "view",
+    }));
+  if (cleaned.length === 0) {
+    return res.status(400).json({ error: "Each view must include base64 image data." });
+  }
+
+  try {
+    const result = await matchProductFromViews({ views: cleaned, brandHint: brandHint || "" });
+    return res.json({
+      glb: result.product.glb,
+      name: result.product.name,
+      match: result.match,
+      confidence: result.confidence,
+      declaredFields: result.product.declaredFields,
+      source: result.source,
+    });
+  } catch (e) {
+    if (e.fallbackProduct) {
+      return res.json({
+        glb: e.fallbackProduct.glb,
+        name: e.fallbackProduct.name,
+        match: e.fallbackProduct.match,
+        confidence: "low",
+        declaredFields: e.fallbackProduct.declaredFields,
+        source: "brand-fallback",
+        warning: e.message,
+      });
+    }
+    return res.status(e.isConfigError ? 500 : 502).json({ error: e.message });
+  }
+});
+
 app.post("/api/handoff/create", (req, res) => {
   const code = makeHandoffCode();
   handoffSessions.set(code, { result: null, listeners: new Set() });
@@ -557,6 +466,21 @@ app.post("/api/handoff/:code/scan", (req, res) => {
   res.json({ ok: true });
 });
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const distPath = path.join(__dirname, "..", "dist");
+const distIndex = path.join(distPath, "index.html");
+if (fs.existsSync(distIndex)) {
+  app.use(express.static(distPath));
+  app.get(/^(?!\/api).*/, (req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
+    res.sendFile(distIndex);
+  });
+}
+
 app.listen(PORT, () => {
-  console.log(`Legal Metrology backend listening on http://localhost:${PORT} (model: ${GEMINI_MODEL})`);
+  const mode = fs.existsSync(distIndex) ? "app+api" : "api-only";
+  console.log(
+    `metriq ai backend listening on http://localhost:${PORT} (${mode}; ` +
+    `Groq: ${groqConfigured() ? "on" : "off"}, 3D: ${gemini3dConfigured() ? "on" : "off"})`
+  );
 });
