@@ -1,7 +1,7 @@
-import { apiUrl } from "./apiBase.js";
+import { apiUrl, threeDApiUrl } from "./apiBase.js";
 
-// Calls to our local backend proxy (server/index.js). Text/vision analysis
-// uses Groq; 3D pack matching uses Gemini auth (AQ.* key) server-side.
+// Text/vision analysis uses Groq; six-face pack models post to the 3D API host
+// (default http://10.22.81.94:3000) via six-face-box-v1.
 
 export async function analyzeLabelImage({ base64, mediaType }, activeRuleVersion) {
   const response = await fetch(apiUrl("/api/analyze"), {
@@ -69,25 +69,48 @@ export async function extractRegulaSyncClauses({ base64, filename }) {
   return data;
 }
 
-export async function generate3DModel({ views, brandHint }) {
-  const response = await fetch(apiUrl("/api/generate-3d"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ views, brandHint }),
-  });
+export async function generate3DModel({
+  views,
+  brandHint,
+  title,
+  proportions,
+  roundness,
+  mode = "quick",
+}) {
+  const body = JSON.stringify({ views, brandHint, title, proportions, roundness, mode });
+  const headers = { "Content-Type": "application/json" };
 
-  let data;
-  try {
-    data = await response.json();
-  } catch (e) {
-    throw new Error("3D service returned an unreadable response (HTTP " + response.status + ").");
+  // Prefer the dedicated 3D host (10.22.81.94:3000), then same-origin /api.
+  const endpoints = [threeDApiUrl("/api/generate-3d"), apiUrl("/api/generate-3d")];
+  const tried = new Set();
+  let lastError = null;
+
+  for (const url of endpoints) {
+    if (!url || tried.has(url)) continue;
+    tried.add(url);
+    try {
+      const response = await fetch(url, { method: "POST", headers, body });
+      let data;
+      try {
+        data = await response.json();
+      } catch (e) {
+        lastError = new Error("3D service returned an unreadable response (HTTP " + response.status + ").");
+        continue;
+      }
+      if (!response.ok) {
+        lastError = new Error((data && data.error) || ("3D request failed (HTTP " + response.status + ")."));
+        // 404/502 on the remote host → try local fallback.
+        if (response.status === 404 || response.status === 502 || response.status === 401) continue;
+        throw lastError;
+      }
+      if (data.glbDataUrl && !data.glb) data.glb = data.glbDataUrl;
+      return data;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
   }
 
-  if (!response.ok) {
-    throw new Error((data && data.error) || ("3D request failed (HTTP " + response.status + ")."));
-  }
-
-  return data;
+  throw lastError || new Error("3D request failed.");
 }
 
 export async function verifyCorrection({ evidenceDataUrl, fieldName, correctedValue }) {

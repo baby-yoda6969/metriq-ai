@@ -3,6 +3,7 @@ node_modules
 dist
 .DS_Store
 .playwright-mcp
+_ref_metriq
 android/local.properties
 android/.gradle
 android/app/build

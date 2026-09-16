@@ -18,7 +18,7 @@ export default defineConfig({
     allowedHosts: [".ngrok-free.dev", ".ngrok.io", ".ngrok.app", ".ngrok-free.app"],
     proxy: {
       '/api': {
-        target: `http://localhost:${process.env.BACKEND_PORT || 8787}`,
+        target: `http://localhost:${process.env.BACKEND_PORT || 3000}`,
         changeOrigin: true,
       },
     },

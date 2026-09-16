@@ -14,7 +14,8 @@ import {
   Users,
 } from "lucide-react";
 import { useTheme } from "../lib/ThemeContext.jsx";
-import { getApiBase, isNativeApp } from "../lib/apiBase.js";
+import { getApiBase, DEFAULT_3D_API_BASE } from "../lib/apiBase.js";
+import { upsertUserSettings } from "../lib/firebaseSync.js";
 import { getActiveRuleVersion } from "../lib/scanLogic.js";
 import { cn } from "../lib/utils.js";
 
@@ -107,15 +108,25 @@ export function ProfileView({
   const roleLabel = role === "inspector" ? "Inspector" : role === "supervisor" ? "Supervisor" : "Rule Admin";
   const initial = (session?.name || "?").trim().charAt(0).toUpperCase();
   const handle = session?.employeeId ? `@${String(session.employeeId).toLowerCase()}` : "@field";
-  const native = isNativeApp();
 
   function saveApiBase() {
     const next = apiBase.trim().replace(/\/$/, "");
     try {
-      if (next) localStorage.setItem("metriq.apiBase", next);
-      else localStorage.removeItem("metriq.apiBase");
+      if (next) {
+        localStorage.setItem("metriq.apiBase", next);
+        localStorage.setItem("metriq.3dApiBase", next);
+      } else {
+        localStorage.removeItem("metriq.apiBase");
+        localStorage.removeItem("metriq.3dApiBase");
+      }
     } catch {
       /* ignore */
+    }
+    if (session?.uid) {
+      upsertUserSettings(session.uid, {
+        theme: mode,
+        apiBase: next || DEFAULT_3D_API_BASE,
+      }).catch(() => {});
     }
     setApiSaved(true);
     window.setTimeout(() => setApiSaved(false), 1600);
@@ -160,33 +171,31 @@ export function ProfileView({
             icon={Settings2}
             label="General settings"
             hint="Field defaults & capture"
-            last={!native}
+            last={false}
           />
-          {native && (
-            <div className="px-4 pb-4 pt-1">
-              <div className="mb-2 flex items-center gap-2 text-[13px] font-medium text-ink">
-                <Server size={14} className="text-ink-soft" />
-                Analysis server
-              </div>
-              <input
-                value={apiBase}
-                onChange={(e) => setApiBase(e.target.value)}
-                placeholder="http://192.168.1.10:8787"
-                className="w-full rounded-xl border border-border bg-bg px-3 py-2.5 text-[13px] text-ink outline-none focus:border-brass"
-                aria-label="API server URL"
-              />
-              <button
-                type="button"
-                onClick={saveApiBase}
-                className="mt-2 w-full rounded-xl bg-panel-alt py-2 text-[13px] font-semibold text-ink"
-              >
-                {apiSaved ? "Saved" : "Save server URL"}
-              </button>
-              <p className="mt-1.5 text-[11px] leading-snug text-ink-soft">
-                Phone APK needs your laptop/server IP running `npm start` on the same Wi‑Fi.
-              </p>
+          <div className="px-4 pb-4 pt-1">
+            <div className="mb-2 flex items-center gap-2 text-[13px] font-medium text-ink">
+              <Server size={14} className="text-ink-soft" />
+              Analysis server
             </div>
-          )}
+            <input
+              value={apiBase}
+              onChange={(e) => setApiBase(e.target.value)}
+              placeholder="http://10.22.81.94:3000"
+              className="w-full rounded-xl border border-border bg-bg px-3 py-2.5 text-[13px] text-ink outline-none focus:border-brass"
+              aria-label="API server URL"
+            />
+            <button
+              type="button"
+              onClick={saveApiBase}
+              className="mt-2 w-full rounded-xl bg-panel-alt py-2 text-[13px] font-semibold text-ink"
+            >
+              {apiSaved ? "Saved · synced" : "Save & sync to Firebase"}
+            </button>
+            <p className="mt-1.5 text-[11px] leading-snug text-ink-soft">
+              Saved to this device and your Firebase profile so other sessions stay aligned.
+            </p>
+          </div>
         </SettingsGroup>
 
         <SettingsGroup>
