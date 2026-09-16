@@ -11,7 +11,6 @@ import { InlineBanner } from "../../components/ui/InlineBanner.jsx";
 import { FieldRow, Stamp } from "./parts.jsx";
 import { captureEvidencePhoto } from "../../lib/capture.js";
 import { generate3DModel, verifyCorrection } from "../../lib/api.js";
-import { findDemo3DProduct } from "../../data/demoProducts.js";
 import { useDismissOnBack } from "../../lib/useDismissOnBack.js";
 
 const RETAKE_REASON_OPTIONS = ["Glare", "Wrinkle", "Blur", "Other"];
@@ -288,11 +287,17 @@ export function HoldNoticeModal({ open, scanMeta, onIssue, onClose }) {
   );
 }
 
-const THREE_D_STEPS = ["Front", "Back", "Side"];
+// Six-face quick model — ported from akshaykumarhudedmani/metriq-ai (six-face-box-v1).
+const THREE_D_FACES = [
+  { id: "front", label: "Front" },
+  { id: "back", label: "Back" },
+  { id: "left", label: "Left side" },
+  { id: "right", label: "Right side" },
+  { id: "top", label: "Top" },
+  { id: "bottom", label: "Bottom" },
+];
 
-// Front / back / side captures are sent to the backend (Gemini auth key)
-// to match a verified photogrammetry .glb from the catalog.
-export function ThreeDCaptureModal({ open, brand, onClose }) {
+export function ThreeDCaptureModal({ open, brand, onClose, onModelReady }) {
   const [stepIndex, setStepIndex] = useState(0);
   const [captures, setCaptures] = useState([]);
   const [generating, setGenerating] = useState(false);
@@ -302,7 +307,8 @@ export function ThreeDCaptureModal({ open, brand, onClose }) {
   const [expanded, setExpanded] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const fileInputRef = useRef(null);
-  const done = stepIndex >= THREE_D_STEPS.length;
+  const done = stepIndex >= THREE_D_FACES.length;
+  const currentFace = THREE_D_FACES[Math.min(stepIndex, THREE_D_FACES.length - 1)];
   const demoProduct = resolved;
 
   useEffect(() => {
@@ -328,24 +334,34 @@ export function ThreeDCaptureModal({ open, brand, onClose }) {
         const data = await generate3DModel({
           views: captures,
           brandHint: brand,
+          title: brand ? `${brand} pack` : "Pack model",
+          mode: "quick",
+          proportions: [1, 1, 0.35],
+          roundness: 0.1,
         });
         if (cancelled) return;
-        setResolved({
+        const model = {
           name: data.name,
-          glb: data.glb,
+          glb: data.glb || data.glbDataUrl,
           declaredFields: data.declaredFields || [],
           match: data.match,
           confidence: data.confidence,
+          source: data.source,
           warning: data.warning,
-        });
+          sha256: data.sha256 || null,
+          backend: data.backend || data.source || null,
+          facePhotos: captures.map((c) => ({
+            face: c.face,
+            label: c.label,
+            dataUrl: `data:${c.mediaType || "image/jpeg"};base64,${c.base64}`,
+          })),
+          builtAt: new Date().toISOString(),
+        };
+        setResolved(model);
+        onModelReady?.(model);
       } catch (err) {
         if (cancelled) return;
-        const fallback = findDemo3DProduct(brand);
-        if (fallback) {
-          setResolved({ ...fallback, warning: err.message });
-        } else {
-          setGenError(err.message || "Could not build 3D reference.");
-        }
+        setGenError(err.message || "Could not build 3D model from the six faces.");
       } finally {
         if (!cancelled) setGenerating(false);
       }
@@ -368,10 +384,15 @@ export function ThreeDCaptureModal({ open, brand, onClose }) {
     setCapturing(true);
     try {
       const { dataUrl } = await captureEvidencePhoto(file);
-      const label = THREE_D_STEPS[stepIndex];
+      const face = THREE_D_FACES[stepIndex];
       setCaptures((prev) => [
         ...prev,
-        { label, base64: dataUrl.split(",")[1], mediaType: "image/jpeg" },
+        {
+          face: face.id,
+          label: face.label,
+          base64: dataUrl.split(",")[1],
+          mediaType: "image/jpeg",
+        },
       ]);
       setStepIndex((i) => i + 1);
     } finally {
@@ -381,30 +402,86 @@ export function ThreeDCaptureModal({ open, brand, onClose }) {
   }
 
   return (
-    <Modal open={open} onOpenChange={(next) => !next && onClose()} title="3D model">
+    <Modal open={open} onOpenChange={(next) => !next && onClose()} title="Build 3D pack">
       {!done ? (
-        <>
-          <p className="mb-3 text-[13.5px] leading-relaxed text-ink-soft">
-            Capture the {THREE_D_STEPS[stepIndex].toLowerCase()} of the product ({stepIndex + 1} of {THREE_D_STEPS.length}).
+        <div className="relative overflow-hidden">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -right-8 -top-10 h-36 w-36 rounded-full bg-[radial-gradient(circle,rgba(208,224,248,0.22),transparent_70%)]"
+          />
+          <p className="relative text-[12px] font-semibold uppercase tracking-[0.16em] text-brass/90">
+            Six sides
           </p>
+          <p className="relative mt-2 text-[14px] leading-relaxed text-ink-soft">
+            Front, back, and the sides — one photo each. Now shoot the{" "}
+            <span className="font-semibold text-paper">{currentFace.label.toLowerCase()}</span>
+            {" "}({stepIndex + 1}/{THREE_D_FACES.length}).
+          </p>
+
+          <div className="relative mt-4 grid grid-cols-3 gap-2">
+            {THREE_D_FACES.map((f, i) => {
+              const doneFace = i < stepIndex;
+              const active = i === stepIndex;
+              return (
+                <div
+                  key={f.id}
+                  className={[
+                    "rounded-2xl border px-2.5 py-2.5 text-center transition-colors",
+                    doneFace
+                      ? "border-brass/35 bg-brass-soft text-brass"
+                      : active
+                        ? "border-brass/60 bg-gradient-to-b from-brass-strong/25 to-brass-soft text-paper shadow-[0_10px_24px_-16px_rgba(208,224,248,0.55)]"
+                        : "border-border bg-panel-alt text-ink-soft",
+                  ].join(" ")}
+                >
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.1em] opacity-70">
+                    {doneFace ? "Done" : active ? "Now" : `${i + 1}`}
+                  </div>
+                  <div className="mt-0.5 text-[12.5px] font-semibold tracking-tight">{f.label}</div>
+                </div>
+              );
+            })}
+          </div>
+
+          {captures[stepIndex - 1] && (
+            <div className="relative mt-4 overflow-hidden rounded-[22px] border border-border bg-panel-alt">
+              <img
+                src={`data:image/jpeg;base64,${captures[stepIndex - 1].base64}`}
+                alt={`Last capture: ${captures[stepIndex - 1].label}`}
+                className="max-h-36 w-full object-contain"
+              />
+            </div>
+          )}
+
           <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleCapture} />
-          <Button variant="primary" disabled={capturing} onClick={() => fileInputRef.current?.click()}>
-            <Camera size={15} /> {capturing ? "Saving…" : `Capture ${THREE_D_STEPS[stepIndex].toLowerCase()}`}
+          <Button
+            variant="primary"
+            className="relative mt-5 w-full justify-center"
+            disabled={capturing}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Camera size={15} /> {capturing ? "Saving…" : `Capture ${currentFace.label.toLowerCase()}`}
           </Button>
-        </>
+        </div>
       ) : generating ? (
-        <div className="flex flex-col items-center gap-3 py-10 text-[13px] text-ink-soft">
-          <Loader2 className="animate-spin text-brass" size={22} />
-          Matching captures to verified 3D reference…
+        <div className="flex flex-col items-center gap-3 py-12 text-[13px] text-ink-soft">
+          <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-brass-soft">
+            <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle,rgba(208,224,248,0.35),transparent_70%)]" />
+            <Loader2 className="relative animate-spin text-brass" size={22} />
+          </div>
+          Building six-face pack model…
         </div>
       ) : demoProduct ? (
         <>
-          <p className="mb-3 text-[13.5px] leading-relaxed text-ink-soft">
-            Matched to <strong>{demoProduct.name}</strong> — verified photogrammetry reference,
-            cross-checked against the declarations below.
+          <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-brass/90">Model ready</p>
+          <p className="mt-2 text-[14px] leading-relaxed text-ink-soft">
+            <span className="font-semibold text-paper">{demoProduct.name}</span>
+            {demoProduct.source === "six-face-box-v1"
+              ? " — approximate pack shape from your six photos."
+              : " — matched reference model."}
           </p>
           {demoProduct.warning && (
-            <InlineBanner tone="info" className="mb-3">
+            <InlineBanner tone="info" className="mt-3">
               {demoProduct.warning}
             </InlineBanner>
           )}
@@ -412,67 +489,63 @@ export function ThreeDCaptureModal({ open, brand, onClose }) {
             <button
               type="button"
               onClick={() => setExpanded(true)}
-              className="group relative block w-full cursor-zoom-in overflow-hidden rounded border-0 p-0"
+              className="group relative mt-4 block w-full cursor-zoom-in overflow-hidden rounded-[22px] border border-border bg-panel-alt p-0"
               aria-label="Enlarge 3D model"
             >
               <model-viewer
                 src={demoProduct.glb}
                 camera-controls="true"
                 auto-rotate="true"
-                style={{ width: "100%", height: "320px", background: "var(--panel-alt)", borderRadius: "4px", pointerEvents: "none" }}
+                style={{ width: "100%", height: "320px", background: "transparent", borderRadius: "22px", pointerEvents: "none" }}
               />
-              <span className="absolute right-2 top-2 flex items-center gap-1 rounded bg-navy-deep/70 px-2 py-1 text-[11px] font-medium text-white opacity-90 transition-opacity group-hover:opacity-100">
+              <span className="absolute right-3 top-3 flex items-center gap-1 rounded-full border border-white/10 bg-black/55 px-2.5 py-1 text-[11px] font-medium text-paper backdrop-blur-md">
                 <Maximize2 size={12} /> Enlarge
               </span>
             </button>
           ) : (
-            <div className="flex h-[320px] items-center justify-center gap-2 rounded bg-panel-alt text-[13px] text-ink-soft">
-              <Loader2 className="animate-spin" size={18} /> Loading 3D viewer…
+            <div className="mt-4 flex h-[320px] items-center justify-center gap-2 rounded-[22px] border border-border bg-panel-alt text-[13px] text-ink-soft">
+              <Loader2 className="animate-spin text-brass" size={18} /> Loading 3D viewer…
             </div>
           )}
-          <div className="mt-3 flex flex-col gap-2.5">
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
-              <ShieldCheck size={13} /> Reference declaration (verified from the physical label)
+          {demoProduct.declaredFields?.length > 0 && (
+            <div className="mt-4 flex flex-col gap-2.5">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-soft">
+                <ShieldCheck size={13} className="text-brass" /> Reference declaration
+              </div>
+              {demoProduct.declaredFields.map((f) => <FieldRow key={f.name} field={f} />)}
             </div>
-            {demoProduct.declaredFields.map((f) => <FieldRow key={f.name} field={f} />)}
-          </div>
+          )}
         </>
       ) : (
         <InlineBanner tone="error">
-          {genError || `No verified 3D reference model is available yet for “${brand || "this brand"}”.`}
+          {genError || "Could not build a 3D model from the captured faces."}
         </InlineBanner>
       )}
 
       {expanded && demoProduct && createPortal(
-        // Portaled straight to <body> rather than rendered inline: the
-        // enclosing Radix Dialog.Content is CSS-transformed (its centering
-        // translate), which makes it the containing block for any regular
-        // `position: fixed` descendant — so a fixed-inset overlay nested
-        // inside it would be confined to the small dialog's own box, not
-        // actually cover the viewport. Portaling escapes that.
         <div
-          className="fixed inset-0 z-[100] flex flex-col bg-navy-deep/95 p-4 sm:p-8"
+          className="fixed inset-0 z-[100] flex flex-col bg-black/92 p-4 backdrop-blur-md sm:p-8"
           onClick={() => setExpanded(false)}
         >
-          <div className="mb-3 flex items-center justify-between text-white">
-            <div className="text-[13px] font-medium">
-              {demoProduct.name} — drag to rotate, scroll or pinch to zoom
+          <div className="mb-3 flex items-center justify-between text-paper">
+            <div className="text-[13px] font-medium text-ink-soft">
+              <span className="text-paper">{demoProduct.name}</span> — drag to rotate
             </div>
             <button
               type="button"
               onClick={() => setExpanded(false)}
               aria-label="Close enlarged view"
-              className="rounded p-1.5 hover:bg-white/10"
+              className="rounded-full border border-white/10 bg-panel-alt p-2 hover:bg-panel"
             >
-              <X size={20} />
+              <X size={18} />
             </button>
           </div>
-          <div className="min-h-0 flex-1" onClick={(e) => e.stopPropagation()}>
+          <div className="min-h-0 flex-1 overflow-hidden rounded-[24px] border border-border bg-panel" onClick={(e) => e.stopPropagation()}>
             <model-viewer
               src={demoProduct.glb}
               camera-controls="true"
               auto-rotate="true"
-              style={{ width: "100%", height: "100%", background: "var(--panel-alt)", borderRadius: "4px" }}
+              style={{ width: "100%", height: "100%", background: "transparent", borderRadius: "24px" }}
             />
           </div>
         </div>,

@@ -36,7 +36,7 @@ import { computeOverallStatus, GPS_BY_REGION } from "./lib/scanLogic.js";
 import { downloadReport } from "./lib/pdf/caseReport.js";
 import { downloadReportDocx } from "./lib/docx/caseReport.js";
 import { useDismissOnBack } from "./lib/useDismissOnBack.js";
-import { apiUrl } from "./lib/apiBase.js";
+import { apiUrl, DEFAULT_3D_API_BASE } from "./lib/apiBase.js";
 import {
   firebaseReady,
   firebaseSignOut,
@@ -45,9 +45,11 @@ import {
   signInWithSession,
   subscribeRuleVersions,
   subscribeScans,
+  subscribeUserSettings,
   upsertRuleVersion,
   upsertScan,
   upsertScans,
+  upsertUserSettings,
   watchAuth,
 } from "./lib/firebaseSync.js";
 
@@ -1124,7 +1126,7 @@ function RulesModal({ onClose, ruleVersions }) {
   );
 }
 
-function CaseDetail({ scan, onClose, role, onEscalate, onAssign, onSetPenalty }) {
+function CaseDetail({ scan, onClose, role, onEscalate, onAssign, onSetPenalty, onUpdateScan }) {
   useBodyScrollLock();
   useDismissOnBack(true, onClose);
   const [escalateOpen, setEscalateOpen] = useState(false);
@@ -1214,7 +1216,23 @@ function CaseDetail({ scan, onClose, role, onEscalate, onAssign, onSetPenalty })
           <button className="lm-btn" onClick={() => downloadReport(scan)}><Download size={14} /> Download report (PDF)</button>
           <button className="lm-btn" onClick={() => downloadReportDocx(scan)}><FileText size={14} /> Download report (Word)</button>
           {scan.status !== "retake_needed" && scan.source !== "ecommerce_monitor" && (
-            <button className="lm-btn" onClick={() => setThreeDOpen(true)}><Box size={14} /> View 3D model</button>
+            <button
+              type="button"
+              className="lm-btn"
+              onClick={() => setThreeDOpen(true)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                borderRadius: 999,
+                border: "1px solid var(--mq-border)",
+                background: "var(--mq-panel)",
+                color: "var(--mq-ink)",
+                padding: "10px 16px",
+              }}
+            >
+              <Box size={14} style={{ color: "var(--mq-brass)" }} /> Capture six sides · 3D
+            </button>
           )}
           {role === "supervisor" && (
             <>
@@ -1237,7 +1255,14 @@ function CaseDetail({ scan, onClose, role, onEscalate, onAssign, onSetPenalty })
         <PenaltyModal scan={scan} onClose={() => setPenaltyOpen(false)} onConfirm={(band) => { onSetPenalty(scan.id, band); setPenaltyOpen(false); }} />
       )}
       {threeDOpen && (
-        <ThreeDCaptureModal open brand={scan.brand} onClose={() => setThreeDOpen(false)} />
+        <ThreeDCaptureModal
+          open
+          brand={scan.brand}
+          onClose={() => setThreeDOpen(false)}
+          onModelReady={(model) => {
+            onUpdateScan?.(scan.id, { packModel: model });
+          }}
+        />
       )}
     </>
   );
@@ -1248,6 +1273,7 @@ function CaseDetail({ scan, onClose, role, onEscalate, onAssign, onSetPenalty })
 /* ---------------------------------------------------------------- */
 
 function AppInner() {
+  const { mode, setMode } = useTheme();
   const [role, setRole] = useState(null);
   // `role` is set only after sign-in, so every downstream screen can assume
   // a real signed-in session whenever `role` is non-null.
@@ -1304,7 +1330,7 @@ function AppInner() {
     });
   }, []);
 
-  // Live Firestore sync for cases + rulebook once signed in.
+  // Live Firestore sync for cases + rulebook + user settings once signed in.
   useEffect(() => {
     if (!firebaseReady || !session?.uid) return undefined;
     let alive = true;
@@ -1338,13 +1364,52 @@ function AppInner() {
       },
       (err) => alive && setSyncError(err?.message || "Rule sync failed.")
     );
+    const unsubSettings = subscribeUserSettings(
+      session.uid,
+      (settings) => {
+        if (!alive || !settings) return;
+        if (settings.theme === "light" || settings.theme === "dark") {
+          setMode(settings.theme);
+        }
+        try {
+          if (typeof settings.apiBase === "string") {
+            if (settings.apiBase) {
+              localStorage.setItem("metriq.apiBase", settings.apiBase);
+              localStorage.setItem("metriq.3dApiBase", settings.apiBase);
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      },
+      (err) => alive && setSyncError(err?.message || "Settings sync failed.")
+    );
 
     return () => {
       alive = false;
       unsubScans();
       unsubRules();
+      unsubSettings();
     };
-  }, [session?.uid]);
+  }, [session?.uid, setMode]);
+
+  // Push theme changes to Firestore so devices stay aligned.
+  useEffect(() => {
+    if (!firebaseReady || !session?.uid) return undefined;
+    const handle = window.setTimeout(() => {
+      upsertUserSettings(session.uid, {
+        theme: mode,
+        apiBase: (() => {
+          try {
+            return localStorage.getItem("metriq.apiBase") || DEFAULT_3D_API_BASE;
+          } catch {
+            return DEFAULT_3D_API_BASE;
+          }
+        })(),
+      }).catch(() => {});
+    }, 400);
+    return () => window.clearTimeout(handle);
+  }, [mode, session?.uid]);
 
   // Feature 2a security fix: the server is the source of truth for rule
   // text (see server/index.js's ruleStore) — this hydrates it with the
@@ -1359,13 +1424,22 @@ function AppInner() {
   }, [ruleVersions]);
 
   function handleSaveScan(scan) {
-    setScans((prev) => [scan, ...prev]);
-    upsertScan(scan).catch((err) => setSyncError(err?.message || "Failed to sync scan."));
+    const withOwner = {
+      ...scan,
+      ownerUid: session?.uid || scan.ownerUid || null,
+      inspector: scan.inspector || session?.name || "Inspector on duty",
+    };
+    setScans((prev) => [withOwner, ...prev]);
+    upsertScan(withOwner, { uid: session?.uid }).catch((err) => setSyncError(err?.message || "Failed to sync scan."));
   }
 
   function handleRunMonitor(newCases) {
-    setScans((prev) => [...newCases, ...prev]);
-    upsertScans(newCases).catch((err) => setSyncError(err?.message || "Failed to sync monitor cases."));
+    const stamped = newCases.map((c) => ({
+      ...c,
+      ownerUid: session?.uid || null,
+    }));
+    setScans((prev) => [...stamped, ...prev]);
+    upsertScans(stamped, { uid: session?.uid }).catch((err) => setSyncError(err?.message || "Failed to sync monitor cases."));
   }
 
   function handlePublishRule(newVersion) {
@@ -1383,7 +1457,7 @@ function AppInner() {
       const next = prev.map((s) => (s.id === id ? { ...s, ...patch } : s));
       const updated = next.find((s) => s.id === id);
       if (updated) {
-        upsertScan(updated).catch((err) => setSyncError(err?.message || "Failed to sync case update."));
+        upsertScan(updated, { uid: session?.uid }).catch((err) => setSyncError(err?.message || "Failed to sync case update."));
       }
       return next;
     });
@@ -1481,6 +1555,7 @@ function AppInner() {
                 onUpdateScan={updateScan}
                 ruleVersions={ruleVersions}
                 inspectorName={session?.name || "Inspector on duty"}
+                ownerUid={session?.uid || null}
                 initialImage={homeCapture}
                 onConsumedInitialImage={() => setHomeCapture(null)}
                 onRescan={() => {
@@ -1524,6 +1599,7 @@ function AppInner() {
           onEscalate={handleEscalate}
           onAssign={handleAssign}
           onSetPenalty={handleSetPenalty}
+          onUpdateScan={updateScan}
         />
       )}
     </div>

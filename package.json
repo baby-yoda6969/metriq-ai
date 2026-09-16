@@ -1,7 +1,7 @@
 {
   "name": "metriq-ai",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "metriq ai — Legal Metrology field compliance for packaged commodities",
   "type": "module",
   "scripts": {
@@ -42,6 +42,7 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "recharts": "^3.10.1",
+    "sharp": "^0.35.4",
     "tailwind-merge": "^3.7.0",
     "tailwindcss": "^4.3.3"
   },

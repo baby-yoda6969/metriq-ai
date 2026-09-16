@@ -15,8 +15,8 @@ export function parseJsonFromText(raw) {
  */
 export async function callGroq({ system, userText, images = [], maxOutputTokens = 4096 }) {
   const GROQ_API_KEY = process.env.GROQ_API_KEY;
-  const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
-  const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL || "llama-3.2-90b-vision-preview";
+  const GROQ_MODEL = process.env.GROQ_MODEL || "qwen/qwen3.8-27b";
+  const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL || "qwen/qwen3.8-27b";
   if (!GROQ_API_KEY) {
     const err = new Error("Server is missing GROQ_API_KEY. Add it to .env and restart the backend.");
     err.isConfigError = true;

@@ -31,6 +31,7 @@ export function ScanView({
   onUpdateScan,
   ruleVersions,
   inspectorName = "Inspector on duty",
+  ownerUid = null,
   initialImage,
   onConsumedInitialImage,
   onRescan,
@@ -55,6 +56,7 @@ export function ScanView({
   const [fieldCorrections, setFieldCorrections] = useState({}); // field name -> correction record
   const [correctingField, setCorrectingField] = useState(null); // field object currently being corrected
   const [threeDOpen, setThreeDOpen] = useState(false);
+  const [packModel, setPackModel] = useState(null);
   const [sideImage] = useState(null);
   const [backImage] = useState(null);
   const [demoProduct, setDemoProduct] = useState(null);
@@ -121,6 +123,7 @@ export function ScanView({
     if (scaleTimeoutRef.current) { clearTimeout(scaleTimeoutRef.current); scaleTimeoutRef.current = null; }
     setImage(null);
     setDemoProduct(null);
+    setPackModel(null);
     setModelViewerReady(false);
     setResult(null);
     setError("");
@@ -278,6 +281,8 @@ export function ScanView({
       violationDisputed: violationDecision?.type === "disputed",
       disputeNote: violationDecision?.type === "disputed" ? violationDecision.note : null,
       holdNoticeId: holdNotice,
+      ownerUid: ownerUid || null,
+      packModel: packModel || null,
       // Optional supplementary angles: present only when the inspector
       // chose to attach them, never required to reach this point.
       additionalPhotos: {
@@ -497,6 +502,31 @@ export function ScanView({
                 handleDemoProduct — reusing it here keeps the record honest. */}
             <IntegrityBadge scan={{ hash: image.hashHex, timestamp: captureMeta?.timestamp || new Date().toISOString(), gps: GPS_BY_REGION[saveForm.region], nonce: captureMeta?.nonce }} />
 
+            <button
+              type="button"
+              onClick={() => setThreeDOpen(true)}
+              className="relative overflow-hidden rounded-[22px] border border-border bg-panel px-4 py-4 text-left transition-colors hover:border-brass/40"
+            >
+              <div
+                aria-hidden
+                className="pointer-events-none absolute -right-6 -top-8 h-28 w-28 rounded-full bg-[radial-gradient(circle,rgba(208,224,248,0.2),transparent_70%)]"
+              />
+              <div className="relative flex items-center gap-3.5">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brass-soft text-brass">
+                  <Box size={18} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[12px] font-semibold uppercase tracking-[0.14em] text-brass/90">3D pack</div>
+                  <div className="mt-0.5 text-[15px] font-semibold tracking-tight text-paper">
+                    Capture six sides
+                  </div>
+                  <div className="mt-0.5 text-[12.5px] text-ink-soft">
+                    Front, back, left, right, top, bottom — then build the model
+                  </div>
+                </div>
+              </div>
+            </button>
+
             <div className="rounded-2xl border border-border bg-panel-alt p-4">
               <div className="mb-2.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
                 <Scale size={13} /> Weigh on certified scale (optional)
@@ -596,16 +626,24 @@ export function ScanView({
                   <Button variant="secondary" onClick={() => downloadReportDocx(buildReportScan(correctedFields))}>
                     <FileText size={14} /> Download report (Word)
                   </Button>
-                  <Button variant="secondary" onClick={() => setThreeDOpen(true)}>
-                    <Box size={14} /> View 3D model
-                  </Button>
                   <Button variant="secondary" onClick={reset}>Scan another</Button>
                 </div>
                 <ChainOfCustody sampleId={"SMP-" + image.hashHex.slice(0, 8).toUpperCase()} />
               </>
             )}
 
-            <ThreeDCaptureModal open={threeDOpen} brand={saveForm.brand} onClose={() => setThreeDOpen(false)} />
+            <ThreeDCaptureModal
+              open={threeDOpen}
+              brand={saveForm.brand}
+              onClose={() => setThreeDOpen(false)}
+              onModelReady={(model) => {
+                setPackModel(model);
+                setDemoProduct(model);
+                if (savedScanId && onUpdateScan) {
+                  onUpdateScan(savedScanId, { packModel: model });
+                }
+              }}
+            />
             <FieldCorrectionModal
               open={!!correctingField}
               field={correctingField || { name: "", value: "" }}

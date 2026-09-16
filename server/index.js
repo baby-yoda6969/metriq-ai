@@ -10,6 +10,7 @@ import { fileURLToPath } from "url";
 import { createRequire } from "module";
 import { callGroq, groqConfigured, parseJsonFromText } from "./groq.js";
 import { gemini3dConfigured, matchProductFromViews } from "./gemini3d.js";
+import { buildQuickModel, FACE_NAMES as QUICK_FACES } from "./quickModel.js";
 
 const require = createRequire(import.meta.url);
 const pdfParse = require("pdf-parse");
@@ -26,7 +27,7 @@ app.use(cors({
   origin: true,
   credentials: false,
 }));
-app.use(express.json({ limit: "15mb" }));
+app.use(express.json({ limit: "40mb" }));
 
 // Deterministic field-status logic still lives in ./rules.js, kept in the
 // codebase and under test, but is currently NOT called from this endpoint
@@ -367,10 +368,56 @@ function scheduleHandoffExpiry(code) {
 }
 
 app.post("/api/generate-3d", async (req, res) => {
-  const { views, brandHint } = req.body || {};
+  const { views, brandHint, title, proportions, roundness, mode } = req.body || {};
   if (!Array.isArray(views) || views.length === 0) {
     return res.status(400).json({ error: "Request must include a non-empty 'views' array of captured photos." });
   }
+
+  // Prefer six-face quick model (ported from akshaykumarhudedmani/metriq-ai).
+  const faceMap = {};
+  for (const v of views) {
+    if (!v?.base64) continue;
+    const face = String(v.face || v.label || "")
+      .toLowerCase()
+      .replace(/[^a-z]/g, "");
+    if (QUICK_FACES.includes(face)) {
+      faceMap[face] = {
+        face,
+        base64: v.base64,
+        mediaType: typeof v.mediaType === "string" ? v.mediaType : "image/jpeg",
+        corners: v.corners,
+      };
+    }
+  }
+  const wantQuick =
+    mode === "quick" ||
+    mode === "six-face" ||
+    Object.keys(faceMap).length === 6 ||
+    (views.length >= 6 && QUICK_FACES.every((f) => faceMap[f]));
+
+  if (wantQuick && Object.keys(faceMap).length === 6) {
+    try {
+      const built = await buildQuickModel({
+        faces: QUICK_FACES.map((f) => faceMap[f]),
+        proportions,
+        roundness,
+        title: title || brandHint || "Pack model",
+      });
+      return res.json({
+        glbDataUrl: `data:model/gltf-binary;base64,${built.glbBase64}`,
+        name: built.title,
+        backend: built.backend,
+        source: "six-face-box-v1",
+        sha256: built.sha256,
+        faces: built.faces,
+        declaredFields: [],
+      });
+    } catch (e) {
+      return res.status(400).json({ error: e.message || "Quick model failed." });
+    }
+  }
+
+  // Legacy: Gemini catalog match against verified photogrammetry assets.
   const cleaned = views
     .filter((v) => v && typeof v.base64 === "string" && v.base64.length > 0)
     .slice(0, 6)
@@ -379,9 +426,6 @@ app.post("/api/generate-3d", async (req, res) => {
       mediaType: typeof v.mediaType === "string" ? v.mediaType : "image/jpeg",
       label: typeof v.label === "string" ? v.label.slice(0, 40) : "view",
     }));
-  if (cleaned.length === 0) {
-    return res.status(400).json({ error: "Each view must include base64 image data." });
-  }
 
   try {
     const result = await matchProductFromViews({ views: cleaned, brandHint: brandHint || "" });
@@ -480,10 +524,10 @@ if (fs.existsSync(distIndex)) {
   });
 }
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   const mode = fs.existsSync(distIndex) ? "app+api" : "api-only";
   console.log(
-    `metriq ai backend listening on http://localhost:${PORT} (${mode}; ` +
+    `metriq ai backend listening on http://0.0.0.0:${PORT} (${mode}; ` +
     `Groq: ${groqConfigured() ? "on" : "off"}, 3D: ${gemini3dConfigured() ? "on" : "off"})`
   );
 });

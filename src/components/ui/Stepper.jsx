@@ -2,7 +2,8 @@ import { Check } from "lucide-react";
 import { cn } from "../../lib/utils.js";
 
 // Horizontal step indicator, replacing the bespoke markup in
-// ThreeDCaptureModal (Front/Back/Side capture) and generalizing it for
+// Reusable step indicator. Extracted from the six-face capture flow in
+// ThreeDCaptureModal and generalizing it for
 // RuleAdminView's draft-submit-approve flow. Not yet consumed outside
 // src/screens: wired up when those flows are ported.
 export function Stepper({ steps, activeIndex }) {
