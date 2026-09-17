@@ -7,7 +7,7 @@ Region: Central India. One Linux B1 plan: `plan-metriq-demo`, one worker.
 - Android backend and mobile web preview: https://metriq-api-bd8258.azurewebsites.net
 
 Both apps share the same plan. There is no GitHub Actions workflow or continuous
-deployment. Azure receives a manually uploaded ZIP and installs Linux runtime
+deployment. Azure receives a manually uploaded ZIP containing prebuilt assets and Linux runtime
 dependencies. No local `.env`, native Android project, or macOS node_modules is
 uploaded. Keys live in App Service application settings, never in the ZIP.
 
@@ -26,9 +26,10 @@ node scripts/azure/package.mjs mobile /tmp/metriq-azure-release-mobile
 
 Use a fresh staging directory for each release. ZIP its contents (not the enclosing
 folder). Deploy with `az webapp deploy -g rg-metriq-demo -n <app-name> --src-path
-<zip-path> --type zip`. The app must retain `SCM_DO_BUILD_DURING_DEPLOYMENT=true`,
-`ENABLE_ORYX_BUILD=true`, Node 22 LTS, and startup `node server/index.js`.
+<zip-path> --type zip`. The app must retain `SCM_DO_BUILD_DURING_DEPLOYMENT=false`,
+`ENABLE_ORYX_BUILD=false`, Node 22 LTS, and startup `node server/index.js`.
 Website settings include `WEBSITE_API_PORT=8080`; mobile uses `BACKEND_PORT=8080`.
+Keep `WEBSITE_RUN_FROM_PACKAGE` unset for extracted ZIP deployments.
 Each app receives only its own API keys. One worker is intentional: existing
 rule and handoff stores are process-local, not distributed.
 
@@ -52,3 +53,14 @@ This is the existing demonstration app. Simulated sign-in remains simulated,
 website cases live in frontend memory, and rules/handoff sessions reset on
 server restart. No NLP branch has been merged. Firebase/Gemini/Groq remain
 external services with their existing quotas and configuration.
+
+### Deployment troubleshooting
+
+A successful upload is not a health check. Check `/api/health` on the website,
+then run `WEBSITE_TEST_ORIGIN=https://metriq-web-bd8258.azurewebsites.net npm --prefix website run test:api`.
+If Azure reports success but startup cannot find `server/index.js`, inspect the
+Kudu runtime directory and deployment logs: a stale run-from-package setting
+can leave the ZIP in `/home/data/SitePackages` instead of extracting it.
+Confirm the setting is unset and redeploy before restarting. Avoid management
+changes while an upload is running. Large uploads may need a longer timeout
+or smaller authenticated Kudu VFS transfers on an unreliable connection.

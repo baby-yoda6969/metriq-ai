@@ -16,7 +16,7 @@ const PORT = websitePort;
 // spare keys stand in once the current one starts returning quota errors —
 // see callGemini below. Order: primary key first, then backups in the order
 // given; duplicates are dropped.
-const GEMINI_API_KEYS = [process.env.GEMINI_API_KEY, ...(process.env.GEMINI_API_KEY_BACKUPS || "").split(",")]
+const GEMINI_API_KEYS = [process.env.GEMINI_API_KEY || "", ...(process.env.GEMINI_API_KEY_BACKUPS || "").split(",")]
   .map((k) => k.trim())
   .filter((k, i, arr) => k && arr.indexOf(k) === i);
 // Flash-class model with the generous free-tier quota (PRD §8). Google also
