@@ -1,5 +1,5 @@
 // Manual release packager. Run builds first; secrets and local node_modules
-// are never copied. Azure installs only pinned runtime dependencies on Linux.
+// are never copied. Install Linux runtime dependencies into the release package.
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -21,4 +21,6 @@ const dependencies = Object.fromEntries(modules.map(name => [name, lock.packages
 writeFileSync(join(output, 'package.json'), JSON.stringify({ name: `metriq-${target}-release`, version: '1.0.0', private: true, type: 'module', engines: { node: '22.x' }, scripts: { start: 'node server/index.js' }, dependencies }, null, 2));
 const result = spawnSync('npm', ['install', '--package-lock-only', '--ignore-scripts', '--omit=dev'], { cwd: output, stdio: 'inherit' });
 if (result.status) process.exit(result.status);
+const install = spawnSync('npm', ['ci', '--omit=dev', '--ignore-scripts', '--os=linux', '--cpu=x64', '--libc=glibc'], { cwd: output, stdio: 'inherit' });
+if (install.status !== 0) process.exit(install.status ?? 1);
 console.log(`Release staged: ${output}`);
