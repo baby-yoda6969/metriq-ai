@@ -1,11 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useMemo } from "react";
 import {
   AlertTriangle, CheckCircle2, Clock, Fingerprint as FingerprintIcon, Hash, MapPin,
   PenLine, QrCode, ScrollText, ShieldCheck, XCircle,
 } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { Badge } from "../../components/ui/Badge.jsx";
-import { hashSeed } from "../../lib/hash.js";
+import { sampleQr } from "../../lib/sampleQr.js";
 import { RULE_CITATIONS } from "../../data/citations.js";
 
 // The rotated double-border "stamp" look on a fresh verdict: a deliberate
@@ -146,46 +146,24 @@ export function CaptureMetaBadge({ meta }) {
   );
 }
 
-// A visually plausible but purely decorative QR pattern, deterministically
-// seeded so the same sample always renders the same "code": a demo
-// stand-in, not a real scannable QR.
-export function PseudoQR({ seed, size = 96 }) {
-  const canvasRef = useRef(null);
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    const cells = 14;
-    const cellSize = size / cells;
-    let h = hashSeed(seed || "sample") || 1;
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, size, size);
-    ctx.fillStyle = "#181B22";
-    for (let y = 0; y < cells; y++) {
-      for (let x = 0; x < cells; x++) {
-        h = (Math.imul(h, 1103515245) + 12345) >>> 0;
-        if (h % 2 === 0) ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
-      }
-    }
-    function finder(px, py) {
-      ctx.fillStyle = "#181B22";
-      ctx.fillRect(px, py, cellSize * 3, cellSize * 3);
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(px + cellSize * 0.5, py + cellSize * 0.5, cellSize * 2, cellSize * 2);
-      ctx.fillStyle = "#181B22";
-      ctx.fillRect(px + cellSize, py + cellSize, cellSize, cellSize);
-    }
-    finder(0, 0);
-    finder(size - cellSize * 3, 0);
-    finder(0, size - cellSize * 3);
-  }, [seed, size]);
-  return <canvas ref={canvasRef} width={size} height={size} className="rounded-xl border border-border" />;
+// Encode the sample identifier itself: records currently have no public lookup URL.
+export function SampleQR({ sampleId, size = 112 }) {
+  const { extent, path } = useMemo(() => sampleQr(sampleId), [sampleId]);
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${extent} ${extent}`}
+      role="img" aria-label={`Scan sample ID ${sampleId}`}
+      className="shrink-0" style={{ background: "#fff", aspectRatio: "1 / 1" }}
+      shapeRendering="crispEdges">
+      <rect width={extent} height={extent} fill="#fff" />
+      <path d={path} fill="#000" />
+    </svg>
+  );
 }
 
 export function ChainOfCustody({ sampleId }) {
   return (
     <div className="flex gap-3 rounded-xl border border-border bg-panel p-3">
-      <PseudoQR seed={sampleId} />
+      <SampleQR sampleId={sampleId} />
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
           <QrCode size={13} /> Physical sample tag
