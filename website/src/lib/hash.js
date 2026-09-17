@@ -1,5 +1,5 @@
 // Tiny deterministic string hash, used to seed demo/fixture data (the
-// pseudo-QR pattern, the fake batch ledger) so the same input always
+// fake batch ledger) so the same input always
 // produces the same-looking output within a session, without a real backend.
 export function hashSeed(str) {
   let h = 0;
