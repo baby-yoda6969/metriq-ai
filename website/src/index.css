@@ -1,0 +1,79 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+@import "./styles/application.css";
+@import "./styles/brand.css";
+
+/* Theme values have one source: lib/theme.js. Inline utilities also inherit
+   local brand/auth scopes, including dialogs portaled to document.body. */
+@theme inline {
+  --color-bg: var(--mq-bg);
+  --color-panel: var(--mq-panel);
+  --color-panel-alt: var(--mq-panel-alt);
+  --color-ink: var(--mq-ink);
+  --color-ink-soft: var(--mq-ink-soft);
+  --color-navy: var(--mq-navy);
+  --color-navy-deep: var(--mq-navy-deep);
+  --color-brass: var(--mq-brass);
+  --color-brass-soft: var(--mq-brass-soft);
+  --color-brass-strong: var(--mq-brass-strong);
+  --color-green: var(--mq-green);
+  --color-green-soft: var(--mq-green-soft);
+  --color-red: var(--mq-red);
+  --color-red-soft: var(--mq-red-soft);
+  --color-border: var(--mq-border);
+  --color-paper: var(--mq-paper);
+  --font-display: 'Manrope', 'Segoe UI', sans-serif;
+  --font-body: 'Manrope', 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', monospace;
+  --ease-lm-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-lm-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+:root {
+  --site-width: 1160px;
+  --site-gutter: clamp(16px, 3vw, 32px);
+  --bg: var(--mq-bg);
+  --panel: var(--mq-panel);
+  --panel-alt: var(--mq-panel-alt);
+  --ink: var(--mq-ink);
+  --ink-soft: var(--mq-ink-soft);
+  --navy: var(--mq-navy);
+  --navy-deep: var(--mq-navy-deep);
+  --brass: var(--mq-brass);
+  --brass-soft: var(--mq-brass-soft);
+  --brass-strong: var(--mq-brass-strong);
+  --green: var(--mq-green);
+  --green-soft: var(--mq-green-soft);
+  --red: var(--mq-red);
+  --red-soft: var(--mq-red-soft);
+  --border: var(--mq-border);
+  --paper: var(--mq-paper);
+  --font-display: 'Manrope', 'Segoe UI', sans-serif;
+  --font-body: 'Manrope', 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', monospace;
+  --warning: #D9B77E;
+  --warning-soft: #30261A;
+  --heat-medium: #6D4E31;
+}
+[data-theme='light'] {
+  --warning: #85561E;
+  --warning-soft: #F3E8D6;
+  --heat-medium: #E4B98B;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { min-height: 100vh; background: var(--bg, #000); color: var(--ink, #F7F8FA); font-family: var(--font-body); }
+#root { min-height: 100vh; }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+input, textarea, select { background-color: var(--panel); color: var(--ink); }
+::selection { background: var(--brass); color: var(--bg); }
+:focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; }
+img { max-width: 100%; }
+
+html { scrollbar-gutter: stable; }
+body { line-height: 1.5; }
+button:disabled { cursor: not-allowed; }
+input::placeholder, textarea::placeholder { color: var(--ink-soft); opacity: .8; }
+input, select, textarea { min-width: 0; max-width: 100%; }
+button > svg { flex-shrink: 0; }

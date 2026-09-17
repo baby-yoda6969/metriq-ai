@@ -12,3 +12,11 @@ android/captures
 *.apk
 *.aab
 release/
+
+# Isolated website secrets and tooling outputs
+.env.website.local
+website/.env*
+!website/.env.example
+website/coverage/
+website/test-results/
+website/playwright-report/
