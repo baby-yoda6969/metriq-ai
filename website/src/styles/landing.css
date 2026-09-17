@@ -1,0 +1,82 @@
+/* Reference composition with the same typography and tokens as the app. */
+.phantom-landing { color: var(--ink); background: var(--bg); font-family: var(--font-body); }
+.phantom-landing :where(a) { color: inherit; text-decoration: none; }
+.phantom-cover { position: relative; min-height: max(850px,100svh); isolation: isolate; overflow: hidden; display: flex; flex-direction: column; align-items: center; }
+.phantom-header { position: relative; z-index: 2; display: flex; justify-content: center; gap: 14px; padding: 24px 76px 0; }
+.phantom-brand { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+.phantom-header > .phantom-brand { padding: 11px 18px; background: color-mix(in srgb,var(--panel) 85%,var(--bg)); border: 1px solid var(--border); border-radius: 9px; }
+.phantom-brand > span { font-family: var(--font-display); font-size: 23px; font-weight: 650; letter-spacing: -.045em; }
+.phantom-mark { width: 29px; height: 25px; object-fit: contain; }
+.phantom-header nav { display: flex; align-items: center; padding: 5px; gap: 2px; background: color-mix(in srgb,var(--panel) 85%,var(--bg)); border: 1px solid var(--border); border-radius: 9px; }
+.phantom-header nav a, .phantom-header nav button { display: inline-flex; align-items: center; gap: 8px; padding: 10px 19px; border-radius: 6px; font-size: 15px; font-weight: 500; color: var(--ink-soft); white-space: nowrap; transition: color .18s,background .18s; }
+.phantom-header nav .phantom-nav-current, .phantom-header nav a:hover, .phantom-header nav button:hover { color: var(--ink); background: var(--panel-alt); }
+.phantom-atmosphere { position: absolute; inset: 0; z-index: -1; color: var(--ink); pointer-events: none; }
+.phantom-sphere { position: absolute; width: min(610px,80vw); height: auto; left: 50%; top: 125px; transform: translateX(-43%) rotate(-18deg); mask-image: linear-gradient(#000 40%,transparent 96%); filter: blur(.3px); }
+.phantom-sphere text { font: 12px 'IBM Plex Mono',monospace; }
+.phantom-haze { position: absolute; width: 640px; height: 560px; top: 110px; left: 50%; transform: translateX(-44%) rotate(-25deg); background: radial-gradient(ellipse at 70% 24%,color-mix(in srgb,var(--ink) 8%,transparent),transparent 32%),radial-gradient(ellipse at 30% 52%,color-mix(in srgb,var(--ink) 3%,transparent),transparent 55%); filter: blur(22px); }
+.phantom-atmosphere::after { content: ''; position: absolute; inset: 0; opacity: .1; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23888' filter='url(%23n)' opacity='.2' d='M0 0h200v200H0z'/%3E%3C/svg%3E"); }
+.phantom-dust { position: absolute; inset: 0; font: 13px 'IBM Plex Mono',monospace; }
+.phantom-dust span { position: absolute; }
+.phantom-hero { width: 100%; padding: clamp(290px,33vh,440px) 24px 130px; text-align: center; }
+.phantom-hero h1 { font-family: var(--font-display); font-size: clamp(44px,5.4vw,80px); line-height: 1.12; font-weight: 500; letter-spacing: -.05em; margin: 0 auto; max-width: 1100px; color: color-mix(in srgb,var(--ink) 90%,var(--bg)); }
+.phantom-hero p { margin: 26px auto 34px; font-size: clamp(16px,1.5vw,20px); line-height: 1.55; color: var(--ink-soft); max-width: 610px; letter-spacing: -.02em; }
+.phantom-primary { background: var(--paper); color: var(--bg); font-size: 16px; font-weight: 600; border-radius: 999px; padding: 18px 32px; min-height: 58px; transition: opacity .18s,transform .18s; }
+.phantom-primary:hover { opacity: .88; transform: translateY(-2px); }
+.phantom-landing :is(a,button):focus-visible { outline: 2px solid var(--brass); outline-offset: 5px; }
+.phantom-scroll { margin-top: auto; margin-bottom: 30px; display: flex; align-items: center; gap: 14px; font-size: 11px; color: var(--ink-soft) !important; }
+.phantom-details, .phantom-teams, .phantom-footer { max-width: var(--site-width); margin: 0 auto; padding: 90px var(--site-gutter); }
+.phantom-details { border-top: 1px solid var(--border); scroll-margin-top: 30px; }
+.phantom-section-label { display: block; color: var(--ink-soft); font-size: 10px; letter-spacing: .12em; font-family: var(--font-mono); }
+.phantom-features { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 64px; margin-top: 48px; }
+.phantom-features article > span { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); }
+.phantom-features h2 { font-family: var(--font-display); font-size: 29px; letter-spacing: -.035em; font-weight: 500; margin: 22px 0 16px; }
+.phantom-features p { color: var(--ink-soft); font-size: 14px; line-height: 1.8; }
+.phantom-teams { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 70px; padding-top: 45px; padding-bottom: 110px; scroll-margin-top: 30px; }
+.phantom-teams h2 { font-family: var(--font-display); font-size: clamp(32px,3.5vw,46px); font-weight: 500; line-height: 1.15; letter-spacing: -.045em; margin-top: 25px; }
+.phantom-team-list button { width: 100%; display: flex; justify-content: space-between; align-items: center; text-align: left; gap: 24px; border-bottom: 1px solid var(--border); padding: 24px 0; }
+.phantom-team-list button:first-child { padding-top: 0; }
+.phantom-team-list strong { font-size: 15px; font-weight: 500; }
+.phantom-team-list button > span > span { display: block; color: var(--ink-soft); font-size: 12px; line-height: 1.7; margin-top: 8px; }
+.phantom-team-list svg { flex-shrink: 0; color: var(--ink-soft); }
+.phantom-team-list button:hover svg { color: var(--ink); }
+.phantom-footer { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding-block: 28px; border-top: 1px solid var(--border); }
+.phantom-footer > span { font-size: 11px; color: var(--ink-soft); }
+.phantom-footer > button { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+@media (min-width: 1700px) { .phantom-hero { padding-top: 39vh; } .phantom-sphere { top: 145px; width: 700px; } }
+@media (max-width: 760px) {
+  .phantom-header { width: 100%; padding: 26px 64px 0 18px; gap: 8px; justify-content: flex-start; }
+  .phantom-header > .phantom-brand { padding: 9px 12px; }
+  .phantom-brand > span { font-size: 22px; }
+  .phantom-header nav { margin-left: auto; }
+  .phantom-header nav a { display: none; }
+  .phantom-header nav button { font-size: 13px; padding: 9px 11px; }
+  .phantom-cover { min-height: max(740px,100svh); }
+  .phantom-sphere { top: 125px; width: 470px; max-width: none; transform: translateX(-45%) rotate(-18deg); }
+  .phantom-haze { width: 460px; }
+  .phantom-hero { padding: 310px 20px 76px; }
+  .phantom-hero h1 { font-size: clamp(32px,7.5vw,56px); letter-spacing: -.055em; }
+  .phantom-hero p { font-size: 15px; max-width: 350px; margin-top: 22px; }
+  .phantom-desktop-break { display: none; }
+  .phantom-primary { font-size: 14px; min-height: 52px; padding: 15px 28px; }
+  .phantom-details,.phantom-teams { padding: 62px 26px; }
+  .phantom-features { grid-template-columns: 1fr; gap: 34px; margin-top: 36px; }
+  .phantom-features h2 { margin-top: 12px; }
+  .phantom-teams { grid-template-columns: 1fr; gap: 40px; padding-top: 12px; }
+  .phantom-footer { margin-inline: 24px; padding: 26px 0; flex-wrap: wrap; }
+  .phantom-footer > span { order: 3; width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .phantom-primary { transition: none; } }
+
+.phantom-hero h1, .phantom-teams h2 { text-wrap: balance; }
+.phantom-header nav { min-width: 0; }
+.phantom-header nav :is(a,button) { min-height: 44px; justify-content: center; }
+.phantom-features article, .phantom-team-list, .phantom-teams > div { min-width: 0; }
+.phantom-team-list button > span { min-width: 0; }
+.phantom-primary { border: 1px solid var(--paper); }
+[data-theme='light'] .phantom-sphere { opacity: .75; }
+[data-theme='light'] .phantom-atmosphere::after { opacity: .06; }
+@media (min-width: 761px) and (max-width: 980px) {
+  .phantom-header nav :is(a,button) { padding-inline: 12px; }
+  .phantom-features { gap: 28px; }
+  .phantom-teams { gap: 36px; }
+}

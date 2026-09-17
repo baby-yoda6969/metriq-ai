@@ -2,7 +2,7 @@
   "name": "metriq-ai",
   "private": true,
   "version": "1.2.0",
-  "description": "metriq ai — Legal Metrology field compliance for packaged commodities",
+  "description": "metriq ai \u2014 Legal Metrology field compliance for packaged commodities",
   "type": "module",
   "scripts": {
     "dev": "concurrently -n client,server -c blue,green \"npm:dev:client\" \"npm:dev:server\"",
@@ -12,10 +12,17 @@
     "build": "vite build",
     "mobile:sync": "npm run build && npx cap sync android",
     "mobile:open": "npx cap open android",
-    "mobile:apk": "npm run mobile:sync && cd android && .\\gradlew.bat assembleRelease",
+    "mobile:apk": "npm run mobile:sync && node scripts/android-build.mjs",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "website:install": "npm --prefix website ci",
+    "website:dev": "npm --prefix website run dev",
+    "website:build": "npm --prefix website run build",
+    "website:start": "npm --prefix website start",
+    "website:test": "npm --prefix website test",
+    "website:lint": "npm --prefix website run lint",
+    "test:mobile": "vitest run --config vitest.mobile.config.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",

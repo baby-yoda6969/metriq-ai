@@ -1,9 +1,9 @@
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
   server: {
     // Bind all interfaces, not just localhost, so a phone on the same
@@ -18,9 +18,9 @@ export default defineConfig({
     allowedHosts: [".ngrok-free.dev", ".ngrok.io", ".ngrok.app", ".ngrok-free.app"],
     proxy: {
       '/api': {
-        target: `http://localhost:${process.env.BACKEND_PORT || 3000}`,
+        target: `http://localhost:${process.env.BACKEND_PORT || loadEnv(mode, process.cwd(), '').BACKEND_PORT || 3000}`,
         changeOrigin: true,
       },
     },
   },
-})
+}))
