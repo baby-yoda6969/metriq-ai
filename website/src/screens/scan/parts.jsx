@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, CheckCircle2, Clock, Fingerprint as FingerprintIcon, Hash, MapPin,
   PenLine, QrCode, ScrollText, ShieldCheck, XCircle,
@@ -146,9 +146,9 @@ export function CaptureMetaBadge({ meta }) {
   );
 }
 
-// Encode the sample identifier itself: records currently have no public lookup URL.
-export function SampleQR({ sampleId, size = 112 }) {
-  const { extent, path } = useMemo(() => sampleQr(sampleId), [sampleId]);
+// The caller supplies the persisted report URL.
+export function SampleQR({ sampleId, value = sampleId, size = 144 }) {
+  const { extent, path } = useMemo(() => sampleQr(value), [value]);
   return (
     <svg width={size} height={size} viewBox={`0 0 ${extent} ${extent}`}
       role="img" aria-label={`Scan sample ID ${sampleId}`}
@@ -160,16 +160,36 @@ export function SampleQR({ sampleId, size = 112 }) {
   );
 }
 
-export function ChainOfCustody({ sampleId }) {
+export function ChainOfCustody({ sampleId, report }) {
+  const [link, setLink] = useState(null);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  const snapshot = JSON.stringify(report);
+  useEffect(() => {
+    let active = true;
+    setLink(null);
+    setError("");
+    if (!snapshot) return;
+    fetch("/api/reports", { method: "POST", headers: { "Content-Type": "application/json" }, body: snapshot })
+      .then(async response => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Could not create report link.");
+        if (active) setLink(new URL(data.path, window.location.origin).href);
+      }).catch(error => { if (active) setError(error.message); });
+    return () => { active = false; };
+  }, [snapshot, retry]);
   return (
     <div className="flex gap-3 rounded-xl border border-border bg-panel p-3">
-      <SampleQR sampleId={sampleId} />
+      {link ? <a href={link} target="_blank" rel="noreferrer" aria-label="Open shared inspection report"><SampleQR sampleId={sampleId} value={link} /></a>
+        : <div className="shrink-0 text-xs text-ink-soft" style={{ width: 144 }} role="status">{error ? "Report link unavailable" : "Creating report link…"}</div>}
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
           <QrCode size={13} /> Physical sample tag
         </div>
         <div className="mt-1 font-mono text-[13px] font-semibold text-ink">{sampleId}</div>
-        <div className="mt-1 text-[12.5px] leading-relaxed text-ink-soft">Chain-of-custody tag for the physical sample sent to a government lab.</div>
+        <div className="mt-1 text-[12.5px] leading-relaxed text-ink-soft">Scan to open this inspection report. Anyone with the link can view this saved snapshot.</div>
+        {link && <a className="mt-2 inline-block text-sm underline text-ink" href={link} target="_blank" rel="noreferrer">Open report ↗</a>}
+        {error && <div className="mt-2 text-sm text-red" role="alert">{error} <button type="button" className="underline" onClick={() => setRetry(n => n + 1)}>Retry</button></div>}
       </div>
     </div>
   );

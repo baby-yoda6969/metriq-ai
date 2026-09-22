@@ -150,6 +150,7 @@ export function ScanView({ onSave, onUpdateScan, ruleVersions, inspectorName = "
   const [saveForm, setSaveForm] = useState({ brand: "", category: CATEGORIES[0], region: REGIONS[0] });
   const [saved, setSaved] = useState(false);
   const [savedScanId, setSavedScanId] = useState(null);
+  const [savedReport, setSavedReport] = useState(null);
   const [violationOpen, setViolationOpen] = useState(false);
   const [violationDecision, setViolationDecision] = useState(null); // null | { type: "confirmed" } | { type: "disputed", note }
   const [holdNoticeOpen, setHoldNoticeOpen] = useState(false);
@@ -336,6 +337,7 @@ export function ScanView({ onSave, onUpdateScan, ruleVersions, inspectorName = "
     setError("");
     setSaved(false);
     setSavedScanId(null);
+    setSavedReport(null);
     setSaveForm({ brand: "", category: CATEGORIES[0], region: REGIONS[0] });
     setViolationOpen(false);
     setViolationDecision(null);
@@ -493,6 +495,7 @@ export function ScanView({ onSave, onUpdateScan, ruleVersions, inspectorName = "
       },
     };
     onSave(scan);
+    setSavedReport(scan);
     setSaved(true);
     setSavedScanId(id);
   }
@@ -504,6 +507,7 @@ export function ScanView({ onSave, onUpdateScan, ruleVersions, inspectorName = "
   // locally within the result phase's own render branch, not held in
   // component state.
   function buildReportScan(correctedFields) {
+    if (savedReport) return { ...savedReport, fields: correctedFields, status: computeOverallStatus(correctedFields) };
     return {
       // Bug fix: this used to be a literal placeholder "current" instead
       // of the actual saved case's id (already held in savedScanId, set by
@@ -915,7 +919,7 @@ export function ScanView({ onSave, onUpdateScan, ruleVersions, inspectorName = "
                   </Button>
                   <Button variant="secondary" onClick={reset}>Scan another</Button>
                 </div>
-                <ChainOfCustody sampleId={"SMP-" + image.hashHex.slice(0, 8).toUpperCase()} />
+                <ChainOfCustody report={buildReportScan(correctedFields)} sampleId={"SMP-" + image.hashHex.slice(0, 8).toUpperCase()} />
               </>
             )}
 

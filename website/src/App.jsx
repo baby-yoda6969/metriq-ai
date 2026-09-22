@@ -1187,7 +1187,7 @@ function CaseDetail({ scan, onClose, role, onEscalate, onAssign, onSetPenalty })
         <RuleVersionBadge version={scan.ruleVersionUsed} style={{ marginBottom: 12 }} />
 
         {scan.status !== "retake_needed" && scan.source !== "ecommerce_monitor" && (
-          <ChainOfCustody sampleId={scan.sampleId || ("SMP-" + scan.hash.slice(0, 8).toUpperCase())} />
+          <ChainOfCustody report={scan} sampleId={scan.sampleId || ("SMP-" + scan.hash.slice(0, 8).toUpperCase())} />
         )}
         {scan.status !== "retake_needed" && <BatchLedger brand={scan.brand} />}
 

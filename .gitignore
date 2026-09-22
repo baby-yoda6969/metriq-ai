@@ -20,3 +20,5 @@ website/.env*
 website/coverage/
 website/test-results/
 website/playwright-report/
+
+website/.data/

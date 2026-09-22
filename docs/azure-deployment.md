@@ -54,6 +54,13 @@ website cases live in frontend memory, and rules/handoff sessions reset on
 server restart. No NLP branch has been merged. Firebase/Gemini/Groq remain
 external services with their existing quotas and configuration.
 
+Shared report links are an exception to the frontend-only case list: their
+immutable snapshots and link secret are stored under `/home/data/metriq-reports`
+on the website App Service. They survive app restarts and manual releases on
+this one-worker plan. Each link gives anyone holding it read access to the
+report and its evidence photos. There is no report listing or revocation UI
+yet; moving to multiple workers requires shared storage for these snapshots.
+
 ### Deployment troubleshooting
 
 A successful upload is not a health check. Check `/api/health` on the website,

@@ -1,4 +1,5 @@
 import express from "express";
+import { sharedReports } from "./sharedReports.js";
 import cors from "cors";
 import { websitePort } from './config.js';
 import { existsSync } from 'node:fs';
@@ -77,6 +78,7 @@ async function callGemini(body) {
 
 app.use(cors());
 app.use(express.json({ limit: "15mb" }));
+app.use("/api/reports", sharedReports(process.env.REPORT_STORAGE_DIR || (process.env.WEBSITE_SITE_NAME ? "/home/data/metriq-reports" : fileURLToPath(new URL("../.data/reports", import.meta.url)))));
 
 // Deterministic field-status logic still lives in ./rules.js, kept in the
 // codebase and under test, but is currently NOT called from this endpoint

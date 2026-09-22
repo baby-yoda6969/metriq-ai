@@ -9,6 +9,7 @@ import { UseCases } from '../screens/UseCases.jsx';
 import { NotFound } from '../screens/NotFound.jsx';
 import { ROLE_ROUTES, workspacePath, isWorkspaceRoute, safeReturnPath } from './routes.js';
 import { useSession } from './SessionContext.jsx';
+const SharedReport = lazy(() => import('../screens/SharedReport.jsx'));
 const Workspace = lazy(() => import('../App.jsx'));
 function RolesRoute() {
   const navigate = useNavigate();
@@ -54,6 +55,7 @@ export function WebsiteRouter() {
       <Route path="sign-in/:role" element={<LoginRoute />} />
       <Route path="*" element={<NotFound />} />
     </Route>
+    <Route path="reports/:token" element={<Suspense fallback={<div className="route-loading">Loading report…</div>}><SharedReport /></Suspense>} />
     <Route path="app/:role/:view?" element={<WorkspaceRoute />} />
   </Routes></>;
 }

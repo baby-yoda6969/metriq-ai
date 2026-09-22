@@ -3,7 +3,7 @@ import jsQR from "jsqr";
 import { sampleQr } from "./sampleQr.js";
 
 describe("physical sample QR", () => {
-  for (const id of ["SMP-065819DA", "SMP-FFFFFFFF", "SMP-00000000"]) {
+  for (const id of ["SMP-065819DA", "SMP-FFFFFFFF", "SMP-00000000", "https://metriq-web-bd8258.azurewebsites.net/reports/" + "a".repeat(64)]) {
     it(`decodes the rendered modules to ${id}`, () => {
       const { extent, path } = sampleQr(id);
       const scale = 4;
