@@ -75,9 +75,10 @@ export async function generate3DModel({
   title,
   proportions,
   roundness,
+  sizeAnnotation,
   mode = "quick",
 }) {
-  const body = JSON.stringify({ views, brandHint, title, proportions, roundness, mode });
+  const body = JSON.stringify({ views, brandHint, title, proportions, roundness, sizeAnnotation, mode });
   const headers = { "Content-Type": "application/json" };
 
   // Prefer the dedicated 3D host (10.22.81.94:3000), then same-origin /api.

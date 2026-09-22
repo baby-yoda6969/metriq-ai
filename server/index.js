@@ -368,7 +368,7 @@ function scheduleHandoffExpiry(code) {
 }
 
 app.post("/api/generate-3d", async (req, res) => {
-  const { views, brandHint, title, proportions, roundness, mode } = req.body || {};
+  const { views, brandHint, title, proportions, roundness, mode, sizeAnnotation } = req.body || {};
   if (!Array.isArray(views) || views.length === 0) {
     return res.status(400).json({ error: "Request must include a non-empty 'views' array of captured photos." });
   }
@@ -402,6 +402,7 @@ app.post("/api/generate-3d", async (req, res) => {
         proportions,
         roundness,
         title: title || brandHint || "Pack model",
+        sizeAnnotation: sizeAnnotation && typeof sizeAnnotation === "object" ? sizeAnnotation : null,
       });
       return res.json({
         glbDataUrl: `data:model/gltf-binary;base64,${built.glbBase64}`,
@@ -410,6 +411,8 @@ app.post("/api/generate-3d", async (req, res) => {
         source: "six-face-box-v1",
         sha256: built.sha256,
         faces: built.faces,
+        proportions: built.proportions,
+        size: built.sizeAnnotation,
         declaredFields: [],
       });
     } catch (e) {

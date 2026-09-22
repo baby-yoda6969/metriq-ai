@@ -518,10 +518,10 @@ export function ScanView({
                 <div className="min-w-0 flex-1">
                   <div className="text-[12px] font-semibold uppercase tracking-[0.14em] text-brass/90">3D pack</div>
                   <div className="mt-0.5 text-[15px] font-semibold tracking-tight text-paper">
-                    Capture six sides
+                    Scan all six sides
                   </div>
                   <div className="mt-0.5 text-[12.5px] text-ink-soft">
-                    Front, back, left, right, top, bottom — then build the model
+                    Camera shots of every face, then a sized 3D pack
                   </div>
                 </div>
               </div>

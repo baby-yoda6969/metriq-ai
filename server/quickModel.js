@@ -19,8 +19,9 @@ const AXES = [
   [[0, 0, -1], [-1, 0, 0], [0, 1, 0], 40, 24],
   [[0, 1, 0], [1, 0, 0], [0, 0, -1], 40, 12],
   [[0, -1, 0], [1, 0, 0], [0, 0, 1], 40, 12],
-  [[1, 0, 0], [0, 1, 0], [0, 0, 1], 24, 12],
-  [[-1, 0, 0], [0, -1, 0], [0, 0, 1], 24, 12],
+  // U is image-right (depth), V is image-up (height), so an upright side photo is not turned on its side.
+  [[1, 0, 0], [0, 0, -1], [0, 1, 0], 24, 12],
+  [[-1, 0, 0], [0, 0, 1], [0, 1, 0], 24, 12],
 ];
 
 function validateCorners(points) {
@@ -73,6 +74,53 @@ function packU32(values) {
   const buf = Buffer.alloc(values.length * 4);
   for (let i = 0; i < values.length; i++) buf.writeUInt32LE(values[i], i * 4);
   return buf;
+}
+
+function cornerBounds(corners, width, height) {
+  const xs = corners.map((p) => p[0] * width);
+  const ys = corners.map((p) => p[1] * height);
+  const left = Math.max(0, Math.floor(Math.min(...xs)));
+  const top = Math.max(0, Math.floor(Math.min(...ys)));
+  const right = Math.min(width, Math.ceil(Math.max(...xs)));
+  const bottom = Math.min(height, Math.ceil(Math.max(...ys)));
+  return {
+    left,
+    top,
+    width: Math.max(1, right - left),
+    height: Math.max(1, bottom - top),
+  };
+}
+
+/**
+ * CamMeter returns the face box in normalized image space. Crop to that box
+ * before texturing so the pack face fills the side instead of the background.
+ * A full-frame quad is left unchanged.
+ */
+export async function prepareFaceImage(inputBuf, corners) {
+  const upright = await sharp(inputBuf).rotate().toBuffer();
+  const meta = await sharp(upright).metadata();
+  const width = meta.width || 0;
+  const height = meta.height || 0;
+  if (width * height > 40_000_000) {
+    throw new Error("Photo is too large");
+  }
+  const bounds = cornerBounds(corners, width, height);
+  const coversFrame = bounds.width >= width * 0.98 && bounds.height >= height * 0.98;
+  let source = upright;
+  let cropped = false;
+  if (!coversFrame && bounds.width >= 8 && bounds.height >= 8) {
+    source = await sharp(upright).extract(bounds).toBuffer();
+    cropped = true;
+  }
+  const jpeg = await sharp(source)
+    .resize({ width: 2048, height: 2048, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 95, chromaSubsampling: "4:4:4" })
+    .toBuffer();
+  return {
+    jpeg,
+    cropped,
+    corners: cropped ? DEFAULT_CORNERS.map((p) => [...p]) : corners,
+  };
 }
 
 /**
@@ -147,15 +195,15 @@ export async function buildQuickModel(input) {
     const name = FACE_NAMES[faceIndex];
     const face = byFace.get(name);
     const inputBuf = Buffer.from(face.base64, "base64");
-    const meta = await sharp(inputBuf).metadata();
-    if ((meta.width || 0) * (meta.height || 0) > 40_000_000) {
-      throw new Error(`${name} photo is too large`);
+    let prepared;
+    try {
+      prepared = await prepareFaceImage(inputBuf, face.corners);
+    } catch (err) {
+      if (err.message === "Photo is too large") throw new Error(`${name} photo is too large`);
+      throw err;
     }
-    const jpeg = await sharp(inputBuf)
-      .rotate() // honor EXIF orientation (EXIF-upright)
-      .resize({ width: 2048, height: 2048, fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality: 95, chromaSubsampling: "4:4:4" })
-      .toBuffer();
+    const jpeg = prepared.jpeg;
+    const textureCorners = prepared.corners;
 
     textures.push({ bufferView: view(jpeg), mimeType: "image/jpeg", name });
 
@@ -164,7 +212,7 @@ export async function buildQuickModel(input) {
     const normals = [];
     const uv = [];
     const indices = [];
-    const [a, b, c, d] = face.corners;
+    const [a, b, c, d] = textureCorners;
 
     for (let j = 0; j <= nv; j++) {
       const t = j / nv;
@@ -244,7 +292,22 @@ export async function buildQuickModel(input) {
     extras: {
       method: QUICK_BACKEND,
       geometry: "authored rounded box, not reconstructed surface",
-      measurement_eligible: false,
+      measurement_eligible: Boolean(input.sizeAnnotation?.widthMm),
+      measurement_note: input.sizeAnnotation
+        ? "Outer dimensions estimated with CamMeter (Hofmann, Seeland, Mader, IJCV 2018). The mesh is still an authored rounded box."
+        : "Authored rounded box, not a measured reconstruction.",
+      cammeter: input.sizeAnnotation
+        ? {
+            method: input.sizeAnnotation.method,
+            paper: input.sizeAnnotation.paper,
+            widthMm: input.sizeAnnotation.widthMm,
+            heightMm: input.sizeAnnotation.heightMm,
+            depthMm: input.sizeAnnotation.depthMm,
+            depthEstimated: Boolean(input.sizeAnnotation.depthEstimated),
+            xiCalib: input.sizeAnnotation.xiCalib,
+            faces: input.sizeAnnotation.faces,
+          }
+        : null,
       recipe,
       source: "akshaykumarhudedmani/metriq-ai six-face-box-v1",
     },
@@ -275,6 +338,8 @@ export async function buildQuickModel(input) {
     backend: QUICK_BACKEND,
     title: (input.title || "Quick pack model").slice(0, 160),
     faces: [...FACE_NAMES],
+    proportions,
+    sizeAnnotation: input.sizeAnnotation || null,
     sha256: crypto.createHash("sha256").update(glb).digest("hex"),
   };
 }

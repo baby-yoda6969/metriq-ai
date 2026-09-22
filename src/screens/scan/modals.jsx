@@ -12,6 +12,7 @@ import { FieldRow, Stamp } from "./parts.jsx";
 import { captureEvidencePhoto } from "../../lib/capture.js";
 import { generate3DModel, verifyCorrection } from "../../lib/api.js";
 import { useDismissOnBack } from "../../lib/useDismissOnBack.js";
+import { GuidedPackCapture } from "./packScan.jsx";
 
 const RETAKE_REASON_OPTIONS = ["Glare", "Wrinkle", "Blur", "Other"];
 
@@ -287,35 +288,26 @@ export function HoldNoticeModal({ open, scanMeta, onIssue, onClose }) {
   );
 }
 
-// Six-face quick model — ported from akshaykumarhudedmani/metriq-ai (six-face-box-v1).
-const THREE_D_FACES = [
-  { id: "front", label: "Front" },
-  { id: "back", label: "Back" },
-  { id: "left", label: "Left side" },
-  { id: "right", label: "Right side" },
-  { id: "top", label: "Top" },
-  { id: "bottom", label: "Bottom" },
-];
+// Six-face quick model — ported from akshaykumarhudedmani/metriq-ai (six-face-box-v1),
+// with outer size from CamMeter (Hofmann, Seeland, Mäder, IJCV 2018).
+function formatMm(value) {
+  if (!(value > 0)) return null;
+  return value >= 100 ? value.toFixed(0) : value.toFixed(1);
+}
 
 export function ThreeDCaptureModal({ open, brand, onClose, onModelReady }) {
-  const [stepIndex, setStepIndex] = useState(0);
-  const [captures, setCaptures] = useState([]);
-  const [generating, setGenerating] = useState(false);
+  const [job, setJob] = useState(null);
   const [genError, setGenError] = useState("");
   const [resolved, setResolved] = useState(null);
   const [modelViewerReady, setModelViewerReady] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [capturing, setCapturing] = useState(false);
-  const fileInputRef = useRef(null);
-  const done = stepIndex >= THREE_D_FACES.length;
-  const currentFace = THREE_D_FACES[Math.min(stepIndex, THREE_D_FACES.length - 1)];
+  const done = Boolean(job);
   const demoProduct = resolved;
+  const building = Boolean(job) && !resolved && !genError;
 
   useEffect(() => {
     if (!open) {
-      setStepIndex(0);
-      setCaptures([]);
-      setGenerating(false);
+      setJob(null);
       setGenError("");
       setResolved(null);
       setModelViewerReady(false);
@@ -326,18 +318,18 @@ export function ThreeDCaptureModal({ open, brand, onClose, onModelReady }) {
   useDismissOnBack(expanded, () => setExpanded(false));
 
   useEffect(() => {
-    if (!done || generating || resolved || genError) return undefined;
+    if (!job || resolved || genError) return undefined;
     let cancelled = false;
     (async () => {
-      setGenerating(true);
       try {
         const data = await generate3DModel({
-          views: captures,
+          views: job.views,
           brandHint: brand,
           title: brand ? `${brand} pack` : "Pack model",
           mode: "quick",
-          proportions: [1, 1, 0.35],
+          proportions: job.size?.proportions || [1, 1, 0.35],
           roundness: 0.1,
+          sizeAnnotation: job.size,
         });
         if (cancelled) return;
         const model = {
@@ -350,7 +342,8 @@ export function ThreeDCaptureModal({ open, brand, onClose, onModelReady }) {
           warning: data.warning,
           sha256: data.sha256 || null,
           backend: data.backend || data.source || null,
-          facePhotos: captures.map((c) => ({
+          size: data.size || job.size,
+          facePhotos: job.views.map((c) => ({
             face: c.face,
             label: c.label,
             dataUrl: `data:${c.mediaType || "image/jpeg"};base64,${c.base64}`,
@@ -362,12 +355,10 @@ export function ThreeDCaptureModal({ open, brand, onClose, onModelReady }) {
       } catch (err) {
         if (cancelled) return;
         setGenError(err.message || "Could not build 3D model from the six faces.");
-      } finally {
-        if (!cancelled) setGenerating(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [done, captures, brand, generating, resolved, genError]);
+  }, [job, brand, resolved, genError]);
 
   useEffect(() => {
     if (!demoProduct?.glb) return;
@@ -378,92 +369,16 @@ export function ThreeDCaptureModal({ open, brand, onClose, onModelReady }) {
     return () => { cancelled = true; };
   }, [demoProduct?.glb]);
 
-  async function handleCapture(e) {
-    const file = e.target.files && e.target.files[0];
-    if (!file || capturing) return;
-    setCapturing(true);
-    try {
-      const { dataUrl } = await captureEvidencePhoto(file);
-      const face = THREE_D_FACES[stepIndex];
-      setCaptures((prev) => [
-        ...prev,
-        {
-          face: face.id,
-          label: face.label,
-          base64: dataUrl.split(",")[1],
-          mediaType: "image/jpeg",
-        },
-      ]);
-      setStepIndex((i) => i + 1);
-    } finally {
-      setCapturing(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  }
+  const size = demoProduct?.size;
+  const sizeLine = size?.widthMm && size?.heightMm
+    ? `${formatMm(size.widthMm)} × ${formatMm(size.heightMm)} × ${formatMm(size.depthMm) || "—"} mm`
+    : null;
 
   return (
     <Modal open={open} onOpenChange={(next) => !next && onClose()} title="Build 3D pack">
       {!done ? (
-        <div className="relative overflow-hidden">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute -right-8 -top-10 h-36 w-36 rounded-full bg-[radial-gradient(circle,rgba(208,224,248,0.22),transparent_70%)]"
-          />
-          <p className="relative text-[12px] font-semibold uppercase tracking-[0.16em] text-brass/90">
-            Six sides
-          </p>
-          <p className="relative mt-2 text-[14px] leading-relaxed text-ink-soft">
-            Front, back, and the sides — one photo each. Now shoot the{" "}
-            <span className="font-semibold text-paper">{currentFace.label.toLowerCase()}</span>
-            {" "}({stepIndex + 1}/{THREE_D_FACES.length}).
-          </p>
-
-          <div className="relative mt-4 grid grid-cols-3 gap-2">
-            {THREE_D_FACES.map((f, i) => {
-              const doneFace = i < stepIndex;
-              const active = i === stepIndex;
-              return (
-                <div
-                  key={f.id}
-                  className={[
-                    "rounded-2xl border px-2.5 py-2.5 text-center transition-colors",
-                    doneFace
-                      ? "border-brass/35 bg-brass-soft text-brass"
-                      : active
-                        ? "border-brass/60 bg-gradient-to-b from-brass-strong/25 to-brass-soft text-paper shadow-[0_10px_24px_-16px_rgba(208,224,248,0.55)]"
-                        : "border-border bg-panel-alt text-ink-soft",
-                  ].join(" ")}
-                >
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.1em] opacity-70">
-                    {doneFace ? "Done" : active ? "Now" : `${i + 1}`}
-                  </div>
-                  <div className="mt-0.5 text-[12.5px] font-semibold tracking-tight">{f.label}</div>
-                </div>
-              );
-            })}
-          </div>
-
-          {captures[stepIndex - 1] && (
-            <div className="relative mt-4 overflow-hidden rounded-[22px] border border-border bg-panel-alt">
-              <img
-                src={`data:image/jpeg;base64,${captures[stepIndex - 1].base64}`}
-                alt={`Last capture: ${captures[stepIndex - 1].label}`}
-                className="max-h-36 w-full object-contain"
-              />
-            </div>
-          )}
-
-          <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleCapture} />
-          <Button
-            variant="primary"
-            className="relative mt-5 w-full justify-center"
-            disabled={capturing}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Camera size={15} /> {capturing ? "Saving…" : `Capture ${currentFace.label.toLowerCase()}`}
-          </Button>
-        </div>
-      ) : generating ? (
+        <GuidedPackCapture onComplete={setJob} />
+      ) : building ? (
         <div className="flex flex-col items-center gap-3 py-12 text-[13px] text-ink-soft">
           <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-brass-soft">
             <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle,rgba(208,224,248,0.35),transparent_70%)]" />
@@ -477,9 +392,20 @@ export function ThreeDCaptureModal({ open, brand, onClose, onModelReady }) {
           <p className="mt-2 text-[14px] leading-relaxed text-ink-soft">
             <span className="font-semibold text-paper">{demoProduct.name}</span>
             {demoProduct.source === "six-face-box-v1"
-              ? " — approximate pack shape from your six photos."
+              ? " — pack shape from the six face photos."
               : " — matched reference model."}
           </p>
+          {sizeLine && (
+            <p className="mt-2 text-[15px] font-semibold tracking-tight text-paper">{sizeLine}</p>
+          )}
+          {size?.depthEstimated && (
+            <p className="mt-1 text-[12.5px] text-ink-soft">Depth used a shallow placeholder because the side faces were not measured.</p>
+          )}
+          {sizeLine && (
+            <p className="mt-1 text-[12.5px] leading-relaxed text-ink-soft">
+              Estimated with CamMeter from the close and full shot on each face. Field estimate for the model, not a certified length.
+            </p>
+          )}
           {demoProduct.warning && (
             <InlineBanner tone="info" className="mt-3">
               {demoProduct.warning}
@@ -517,9 +443,12 @@ export function ThreeDCaptureModal({ open, brand, onClose, onModelReady }) {
           )}
         </>
       ) : (
-        <InlineBanner tone="error">
-          {genError || "Could not build a 3D model from the captured faces."}
-        </InlineBanner>
+        <div className="flex flex-col gap-3">
+          <InlineBanner tone="error">
+            {genError || "Could not build a 3D model from the captured faces."}
+          </InlineBanner>
+          <Button variant="secondary" onClick={() => setGenError("")}>Try building again</Button>
+        </div>
       )}
 
       {expanded && demoProduct && createPortal(

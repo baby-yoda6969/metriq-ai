@@ -41,7 +41,10 @@ export function get3dApiBase() {
   if (fromEnv) return fromEnv;
   const general = getApiBase();
   if (general) return general;
-  return DEFAULT_3D_API_BASE;
+  if (Capacitor.isNativePlatform()) {
+    return DEFAULT_3D_API_BASE;
+  }
+  return "";
 }
 
 export function apiUrl(path) {
