@@ -194,7 +194,7 @@ function BehindScanner({ active, revealed, onCapture }) {
   );
 }
 
-export function PullToScan({ open, onOpenChange, onCapture, children, enabled = true }) {
+export function PullToScan({ open, onOpenChange, onCapture, onDirectScan, children, enabled = true }) {
   const rootRef = useRef(null);
   const pullRef = useRef(0);
   const dragRef = useRef({ active: false, startY: 0, startPull: 0, fromContent: false });
@@ -231,6 +231,12 @@ export function PullToScan({ open, onOpenChange, onCapture, children, enabled = 
 
   function snap(next) {
     const opened = next >= SNAP;
+    if (opened && onDirectScan) {
+      setPullBoth(0);
+      onOpenChange(false);
+      onDirectScan();
+      return;
+    }
     setPullBoth(opened ? 1 : 0);
     onOpenChange(opened);
   }
@@ -253,6 +259,12 @@ export function PullToScan({ open, onOpenChange, onCapture, children, enabled = 
     dragRef.current.active = false;
     setDragging(false);
     if (Math.abs(dy) < 10 && dragRef.current.startPull < 0.05 && !dragRef.current.fromContent) {
+      if (onDirectScan) {
+        setPullBoth(0);
+        onOpenChange(false);
+        onDirectScan();
+        return;
+      }
       setPullBoth(1);
       onOpenChange(true);
       return;
@@ -328,14 +340,16 @@ export function PullToScan({ open, onOpenChange, onCapture, children, enabled = 
   }, [enabled, onOpenChange]);
 
   const opened = pull > 0.85;
-  const hint = opened ? "Swipe up to close" : pull > SNAP ? "Release to scan" : "Pull down to scan";
+  const hint = onDirectScan
+    ? (pull > SNAP ? "Release to scan six sides" : "Pull down to scan six sides")
+    : (opened ? "Swipe up to close" : pull > SNAP ? "Release to scan" : "Pull down to scan");
   const showPeek = enabled || open || pull > 0.02;
   const peek = showPeek ? CLOSED_PEEK : 0;
 
   return (
     <div ref={rootRef} className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       <BehindScanner
-        active={pull > 0.08 || open}
+        active={!onDirectScan && (pull > 0.08 || open)}
         revealed={pull > 0.55}
         onCapture={onCapture}
       />

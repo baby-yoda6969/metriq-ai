@@ -128,7 +128,7 @@ export function HomeView({
           {firstName(session?.name)}.
         </h1>
         <p className="mt-3 max-w-[300px] text-[13.5px] leading-relaxed text-ink-soft">
-          Pull down to scan a pack. Swipe left for rule amendments.
+          Pull down to scan all six sides. Swipe left for rule amendments.
         </p>
       </motion.div>
 
@@ -200,7 +200,7 @@ export function HomeView({
       <div className="mt-1 divide-y divide-[color:var(--mq-hairline)]">
         {recent.length === 0 && (
           <div className="py-10 text-center text-[13px] text-ink-soft">
-            No cases yet. Pull down to scan a pack.
+            No cases yet. Pull down to scan all six sides.
           </div>
         )}
         {recent.map((s, i) => (

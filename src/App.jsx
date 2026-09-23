@@ -36,7 +36,7 @@ import { computeOverallStatus, GPS_BY_REGION } from "./lib/scanLogic.js";
 import { downloadReport } from "./lib/pdf/caseReport.js";
 import { downloadReportDocx } from "./lib/docx/caseReport.js";
 import { useDismissOnBack } from "./lib/useDismissOnBack.js";
-import { apiUrl, DEFAULT_3D_API_BASE } from "./lib/apiBase.js";
+import { apiUrl, getApiBase } from "./lib/apiBase.js";
 import {
   firebaseReady,
   firebaseSignOut,
@@ -1163,7 +1163,7 @@ function CaseDetail({ scan, onClose, role, onEscalate, onAssign, onSetPenalty, o
         ) : (
           <>
             <div className="lm-fields">
-              {scan.fields.map((f) => (
+              {(scan.fields || []).map((f) => (
                 <FieldRow key={f.name} field={f} correction={scan.fieldCorrections?.[f.name]} />
               ))}
             </div>
@@ -1283,6 +1283,7 @@ function AppInner() {
   const [view, setView] = useState("home");
   const [homeCapture, setHomeCapture] = useState(null);
   const [scanPullOpen, setScanPullOpen] = useState(false);
+  const [sixSideOpen, setSixSideOpen] = useState(false);
   const [scans, setScans] = useState(() => seedScans());
   const [detailScanId, setDetailScanId] = useState(null);
   const [ruleVersions, setRuleVersions] = useState(RULE_CHANGELOG);
@@ -1399,13 +1400,7 @@ function AppInner() {
     const handle = window.setTimeout(() => {
       upsertUserSettings(session.uid, {
         theme: mode,
-        apiBase: (() => {
-          try {
-            return localStorage.getItem("metriq.apiBase") || DEFAULT_3D_API_BASE;
-          } catch {
-            return DEFAULT_3D_API_BASE;
-          }
-        })(),
+        apiBase: getApiBase(),
       }).catch(() => {});
     }, 400);
     return () => window.clearTimeout(handle);
@@ -1475,14 +1470,20 @@ function AppInner() {
     updateScan(id, { penaltyBand: band });
   }
 
+  function openSixSideScan() {
+    setHomeCapture(null);
+    setScanPullOpen(false);
+    setView("home");
+    setSixSideOpen(true);
+  }
+
   function handleTabChange(id) {
     if (id === "scan") {
-      // Pull-to-scan lives on Home only — jump home first, then open the sheet.
-      setView("home");
-      setScanPullOpen(true);
+      openSixSideScan();
       return;
     }
     setScanPullOpen(false);
+    setSixSideOpen(false);
     setView(id);
   }
 
@@ -1517,6 +1518,7 @@ function AppInner() {
           enabled={view === "home"}
           open={scanPullOpen}
           onOpenChange={setScanPullOpen}
+          onDirectScan={openSixSideScan}
           onCapture={(img) => {
             setHomeCapture(img);
             setScanPullOpen(false);
@@ -1587,8 +1589,34 @@ function AppInner() {
               />
             )}
           </main>
-          <BottomNav role={role} view={scanPullOpen ? "scan" : view} onChange={handleTabChange} />
+          <BottomNav role={role} view={sixSideOpen ? "scan" : view} onChange={handleTabChange} />
         </PullToScan>
+      )}
+
+      {sixSideOpen && (
+        <ThreeDCaptureModal
+          open
+          brand=""
+          onClose={() => setSixSideOpen(false)}
+          onModelReady={(model) => {
+            const front = model.facePhotos?.find((p) => p.face === "front") || model.facePhotos?.[0];
+            handleSaveScan({
+              id: "pack-" + Date.now(),
+              brand: model.name || "Six-side pack",
+              category: CATEGORIES[0],
+              region: REGIONS[0],
+              date: new Date().toISOString().slice(0, 10),
+              inspector: session?.name || "Inspector on duty",
+              ownerUid: session?.uid || null,
+              status: "pack",
+              fields: [],
+              source: "six-face-box-v1",
+              packModel: model,
+              imageDataUrl: front?.dataUrl || null,
+              timestamp: new Date().toISOString(),
+            });
+          }}
+        />
       )}
 
       {detailScan && (

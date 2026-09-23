@@ -16,6 +16,7 @@ const STAMP_CONFIG = {
   compliant: { label: "COMPLIANT", className: "text-green border-green" },
   non_compliant: { label: "NON-COMPLIANT", className: "text-red border-red" },
   retake_needed: { label: "RETAKE REQUIRED", className: "text-brass border-brass" },
+  pack: { label: "3D PACK", className: "text-brass border-brass" },
 };
 
 export function Stamp({ status }) {

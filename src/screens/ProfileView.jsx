@@ -96,13 +96,7 @@ export function ProfileView({
 }) {
   const { mode, setMode } = useTheme();
   const [pauseNotifs, setPauseNotifs] = useState(false);
-  const [apiBase, setApiBase] = useState(() => {
-    try {
-      return localStorage.getItem("metriq.apiBase") || getApiBase() || "";
-    } catch {
-      return "";
-    }
-  });
+  const [apiBase, setApiBase] = useState(() => getApiBase() || "");
   const [apiSaved, setApiSaved] = useState(false);
   const active = getActiveRuleVersion(ruleVersions);
   const roleLabel = role === "inspector" ? "Inspector" : role === "supervisor" ? "Supervisor" : "Rule Admin";
